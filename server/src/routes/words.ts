@@ -6,6 +6,7 @@ import {
   insertWords,
   updateWord,
   deleteWord,
+  deleteWordsByLesson,
   recordReview,
   resetReviewProgress,
   resetToDefaults,
@@ -132,6 +133,38 @@ wordsRouter.put('/:id', (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error updating word:', error);
     res.status(500).json({ error: 'Failed to update word' });
+  }
+});
+
+// POST /api/words/delete-lesson - Delete entire lesson with all words
+wordsRouter.post('/delete-lesson', (req: Request, res: Response) => {
+  try {
+    const { lesson, language } = req.body;
+    if (!lesson || typeof lesson !== 'string') {
+      return res.status(400).json({ error: 'lesson name is required' });
+    }
+    const lang = typeof language === 'string' ? language : undefined;
+    const deletedCount = deleteWordsByLesson(lesson, lang);
+    res.json({ success: true, lesson, deletedCount });
+  } catch (error) {
+    console.error('Error deleting lesson:', error);
+    res.status(500).json({ error: 'Failed to delete lesson' });
+  }
+});
+
+// DELETE /api/words/by-lesson - Delete entire lesson via query
+wordsRouter.delete('/by-lesson', (req: Request, res: Response) => {
+  try {
+    const lesson = typeof req.query.lesson === 'string' ? req.query.lesson : undefined;
+    const language = typeof req.query.language === 'string' ? req.query.language : undefined;
+    if (!lesson) {
+      return res.status(400).json({ error: 'lesson query parameter is required' });
+    }
+    const deletedCount = deleteWordsByLesson(lesson, language);
+    res.json({ success: true, lesson, deletedCount });
+  } catch (error) {
+    console.error('Error deleting lesson:', error);
+    res.status(500).json({ error: 'Failed to delete lesson' });
   }
 });
 

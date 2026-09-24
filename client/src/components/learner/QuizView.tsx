@@ -20,24 +20,53 @@ export const QuizView: React.FC<QuizViewProps> = ({
   onRecordReview,
   onRestart,
 }) => {
+  // Stable quiz words for this quiz session so reviews don't reorder questions mid-test
+  const [quizWords, setQuizWords] = useState<WordItem[]>(() => [...words]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
   const [score, setScore] = useState(0);
   const [isFinished, setIsFinished] = useState(false);
 
-  const currentWord = words[currentIndex];
+  const wordsIdFingerprint = useMemo(() => {
+    return words.map(w => w.id).sort().join(',');
+  }, [words]);
+
+  // Synchronize question pool only if the incoming set of question IDs changes
+  useEffect(() => {
+    setQuizWords([...words]);
+    setCurrentIndex(0);
+    setSelectedOption(null);
+    setIsAnswered(false);
+    setScore(0);
+    setIsFinished(false);
+  }, [wordsIdFingerprint]);
+
+  const currentWord = quizWords[currentIndex];
+
+  // Pre-generate and freeze choices for each word so options don't jump around on re-renders
+  const optionsMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    const otherTranslations = allWords
+      .filter(w => w.language === language)
+      .map(w => w.translation);
+
+    for (const item of quizWords) {
+      const distractors = otherTranslations
+        .filter(t => t !== item.translation)
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 3);
+      const allChoices = Array.from(new Set([...distractors, item.translation])).sort(() => 0.5 - Math.random());
+      map.set(item.id, allChoices);
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wordsIdFingerprint, allWords.length, language]);
 
   const options = useMemo(() => {
     if (!currentWord) return [];
-
-    const pool = allWords.filter(w => w.id !== currentWord.id && w.language === language);
-    const shuffledPool = [...pool].sort(() => 0.5 - Math.random());
-    const distractors = shuffledPool.slice(0, 3).map(w => w.translation);
-
-    const allChoices = [...distractors, currentWord.translation];
-    return allChoices.sort(() => 0.5 - Math.random());
-  }, [currentWord, allWords, language]);
+    return optionsMap.get(currentWord.id) || [currentWord.translation];
+  }, [optionsMap, currentWord]);
 
   useEffect(() => {
     if (currentWord && !isAnswered && !isFinished) {
@@ -59,7 +88,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
   };
 
   const handleNext = () => {
-    if (currentIndex + 1 < words.length) {
+    if (currentIndex + 1 < quizWords.length) {
       setCurrentIndex(prev => prev + 1);
       setSelectedOption(null);
       setIsAnswered(false);
@@ -73,6 +102,16 @@ export const QuizView: React.FC<QuizViewProps> = ({
     }
   };
 
+  const handleRestart = () => {
+    setQuizWords([...words]);
+    setCurrentIndex(0);
+    setSelectedOption(null);
+    setIsAnswered(false);
+    setScore(0);
+    setIsFinished(false);
+    onRestart();
+  };
+
   if (!words || words.length === 0) {
     return (
       <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center' }}>
@@ -82,7 +121,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
   }
 
   if (isFinished) {
-    const percentage = Math.round((score / words.length) * 100);
+    const percentage = Math.round((score / quizWords.length) * 100);
     return (
       <div className="glass-panel animate-fade-in" style={{ padding: '3.5rem 2rem', textAlign: 'center', maxWidth: '580px', margin: '0 auto' }}>
         <div
@@ -103,7 +142,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
         <h2 style={{ fontSize: '1.85rem', marginBottom: '0.5rem' }}>Vokabeltest abgeschlossen!</h2>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
           Du hast <strong style={{ color: '#fff' }}>{score}</strong> von{' '}
-          <strong style={{ color: '#fff' }}>{words.length}</strong> Vokabeln richtig beantwortet.
+          <strong style={{ color: '#fff' }}>{quizWords.length}</strong> Vokabeln richtig beantwortet.
         </p>
 
         <div
@@ -120,14 +159,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
 
         <button
           type="button"
-          onClick={() => {
-            setCurrentIndex(0);
-            setSelectedOption(null);
-            setIsAnswered(false);
-            setScore(0);
-            setIsFinished(false);
-            onRestart();
-          }}
+          onClick={handleRestart}
           className="btn btn-primary btn-lg"
         >
           <RotateCcw size={18} />
@@ -137,6 +169,10 @@ export const QuizView: React.FC<QuizViewProps> = ({
     );
   }
 
+  if (!currentWord) {
+    return null;
+  }
+
   return (
     <div style={{ maxWidth: '640px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
@@ -144,7 +180,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
           {currentWord.lesson}
         </span>
         <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-          Frage {currentIndex + 1} von {words.length} • Punkte: {score}
+          Frage {currentIndex + 1} von {quizWords.length} • Punkte: {score}
         </span>
       </div>
 
@@ -209,7 +245,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
               btnStyle = {
                 ...btnStyle,
                 background: 'rgba(16, 185, 129, 0.15)',
-                borderColor: 'var(--success)',
+                border: '1px solid var(--success)',
                 color: '#ffffff',
                 fontWeight: 600,
               };
@@ -217,7 +253,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
               btnStyle = {
                 ...btnStyle,
                 background: 'rgba(239, 68, 68, 0.15)',
-                borderColor: 'var(--danger)',
+                border: '1px solid var(--danger)',
                 color: '#fca5a5',
               };
             } else {
@@ -230,7 +266,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
 
           return (
             <button
-              key={idx}
+              key={`${currentWord.id}-${idx}`}
               type="button"
               onClick={() => handleSelectOption(option)}
               disabled={isAnswered}
@@ -262,7 +298,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
             className="btn btn-primary btn-lg"
             style={{ width: '100%' }}
           >
-            <span>{currentIndex + 1 < words.length ? 'Nächste Frage' : 'Ergebnis anzeigen'}</span>
+            <span>{currentIndex + 1 < quizWords.length ? 'Nächste Frage' : 'Ergebnis anzeigen'}</span>
           </button>
         </div>
       )}

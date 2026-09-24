@@ -1,11 +1,12 @@
 import { get, set } from 'idb-keyval';
-import type { WordItem, AppSettings } from '../types/vocabulary';
+import type { WordItem, AppSettings, Language } from '../types/vocabulary';
 import {
   apiGetWords,
   apiCreateWord,
   apiBatchCreateWords,
   apiUpdateWord,
   apiDeleteWord,
+  apiDeleteLesson,
   apiRecordReview,
   apiResetProgress,
   apiResetToDefaults,
@@ -367,6 +368,24 @@ export async function deleteWord(id: string): Promise<WordItem[]> {
     console.warn('[Storage] Server error on deleteWord, falling back to local', err);
     const words = await loadWords();
     const updated = words.filter(w => w.id !== id);
+    await saveWords(updated);
+    return updated;
+  }
+}
+
+export async function deleteLesson(lesson: string, language?: Language): Promise<WordItem[]> {
+  try {
+    await apiDeleteLesson(lesson, language);
+    return await loadWords();
+  } catch (err) {
+    console.warn('[Storage] Server error on deleteLesson, falling back to local', err);
+    const words = await loadWords();
+    const updated = words.filter(w => {
+      if (language) {
+        return !(w.lesson === lesson && w.language === language);
+      }
+      return w.lesson !== lesson;
+    });
     await saveWords(updated);
     return updated;
   }

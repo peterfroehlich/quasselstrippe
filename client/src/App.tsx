@@ -9,6 +9,7 @@ import {
   addWords,
   updateWord,
   deleteWord,
+  deleteLesson,
   recordReviewProgress,
   resetReviewProgress,
   resetToDefaults,
@@ -74,6 +75,11 @@ export const App: React.FC = () => {
 
   const handleDeleteWord = async (id: string) => {
     const updated = await deleteWord(id);
+    setWords(updated);
+  };
+
+  const handleDeleteLesson = async (lessonName: string) => {
+    const updated = await deleteLesson(lessonName, activeLanguage);
     setWords(updated);
   };
 
@@ -146,6 +152,7 @@ export const App: React.FC = () => {
             onAddWord={handleAddWord}
             onUpdateWord={handleUpdateWord}
             onDeleteWord={handleDeleteWord}
+            onDeleteLesson={handleDeleteLesson}
             onImportWords={handleImportWords}
             onResetProgress={handleResetProgress}
             onOpenSettings={() => setIsSettingsOpen(true)}

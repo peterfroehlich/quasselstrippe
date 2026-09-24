@@ -122,6 +122,7 @@ Die SQLite-Datenbank verwendet den schnellen **WAL-Modus** (`PRAGMA journal_mode
 | `POST` | `/api/words` | Neue Vokabel anlegen |
 | `PUT` | `/api/words/:id` | Vokabel bearbeiten |
 | `DELETE` | `/api/words/:id` | Vokabel löschen |
+| `POST` | `/api/words/delete-lesson` | Gesamte Lektion mit allen Wörtern löschen |
 | `POST` | `/api/words/batch` | Mehrere Vokabeln importieren / speichern |
 | `POST` | `/api/words/:id/review` | Abfrageergebnis protokollieren (`{ wasCorrect: boolean }`) |
 | `POST` | `/api/words/reset-progress` | Leitner-Lernfortschritt (Boxen) zurücksetzen |

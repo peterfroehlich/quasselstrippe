@@ -271,6 +271,19 @@ export function deleteWord(id: string): boolean {
   return result.changes > 0;
 }
 
+export function deleteWordsByLesson(lesson: string, language?: string): number {
+  const db = getDatabase();
+  if (language) {
+    const stmt = db.prepare('DELETE FROM words WHERE lesson = ? AND language = ?');
+    const result = stmt.run(lesson, language);
+    return Number(result.changes);
+  } else {
+    const stmt = db.prepare('DELETE FROM words WHERE lesson = ?');
+    const result = stmt.run(lesson);
+    return Number(result.changes);
+  }
+}
+
 export function recordReview(id: string, wasCorrect: boolean): WordItem | null {
   const existing = getWordById(id);
   if (!existing) return null;

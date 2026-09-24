@@ -12,6 +12,7 @@ interface AdminDashboardProps {
   onAddWord: (word: WordItem) => void;
   onUpdateWord: (word: WordItem) => void;
   onDeleteWord: (id: string) => void;
+  onDeleteLesson: (lesson: string) => void;
   onImportWords: (words: WordItem[]) => void;
   onResetProgress: () => void;
   onOpenSettings: () => void;
@@ -25,6 +26,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onAddWord,
   onUpdateWord,
   onDeleteWord,
+  onDeleteLesson,
   onImportWords,
   onResetProgress,
   onOpenSettings,
@@ -92,6 +94,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           language={language}
           onUpdateWord={onUpdateWord}
           onDeleteWord={onDeleteWord}
+          onDeleteLesson={onDeleteLesson}
           onAddWord={onAddWord}
           onImportWords={onImportWords}
           onResetProgress={onResetProgress}

@@ -19,6 +19,28 @@ interface MatchCard {
   isMatched: boolean;
 }
 
+function createGame(sourceWords: WordItem[]): { gameWords: WordItem[]; cards: MatchCard[] } {
+  const selected = [...sourceWords].sort(() => 0.5 - Math.random()).slice(0, 6);
+  const list: MatchCard[] = [];
+  selected.forEach(w => {
+    list.push({
+      id: `word-${w.id}`,
+      wordId: w.id,
+      text: w.word,
+      type: 'word',
+      isMatched: false,
+    });
+    list.push({
+      id: `trans-${w.id}`,
+      wordId: w.id,
+      text: w.translation,
+      type: 'translation',
+      isMatched: false,
+    });
+  });
+  return { gameWords: selected, cards: list.sort(() => 0.5 - Math.random()) };
+}
+
 export const MatchingView: React.FC<MatchingViewProps> = ({
   words,
   language,
@@ -32,30 +54,27 @@ export const MatchingView: React.FC<MatchingViewProps> = ({
   const [seconds, setSeconds] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(true);
 
-  const gameWords = useMemo(() => {
-    return [...words].sort(() => 0.5 - Math.random()).slice(0, 6);
+  const [gameState, setGameState] = useState<{ gameWords: WordItem[]; cards: MatchCard[] }>(() => createGame(words));
+  const { gameWords, cards } = gameState;
+
+  const wordsIdFingerprint = useMemo(() => {
+    return words.map(w => w.id).sort().join(',');
   }, [words]);
 
-  const cards: MatchCard[] = useMemo(() => {
-    const list: MatchCard[] = [];
-    gameWords.forEach(w => {
-      list.push({
-        id: `word-${w.id}`,
-        wordId: w.id,
-        text: w.word,
-        type: 'word',
-        isMatched: false,
-      });
-      list.push({
-        id: `trans-${w.id}`,
-        wordId: w.id,
-        text: w.translation,
-        type: 'translation',
-        isMatched: false,
-      });
-    });
-    return list.sort(() => 0.5 - Math.random());
-  }, [gameWords]);
+  const initGame = () => {
+    setGameState(createGame(words));
+    setMatchedIds(new Set());
+    setSelectedCardId(null);
+    setWrongPair(null);
+    setMoves(0);
+    setSeconds(0);
+    setIsTimerRunning(true);
+  };
+
+  useEffect(() => {
+    initGame();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wordsIdFingerprint]);
 
   useEffect(() => {
     let interval: number;
@@ -139,11 +158,7 @@ export const MatchingView: React.FC<MatchingViewProps> = ({
         <button
           type="button"
           onClick={() => {
-            setMatchedIds(new Set());
-            setSelectedCardId(null);
-            setMoves(0);
-            setSeconds(0);
-            setIsTimerRunning(true);
+            initGame();
             onRestart();
           }}
           className="btn btn-primary btn-lg"

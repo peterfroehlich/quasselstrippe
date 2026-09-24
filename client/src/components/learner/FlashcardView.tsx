@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   RotateCw, 
   Check, 
@@ -28,52 +28,164 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
   onRestart,
   autoPlayAudio = true,
 }) => {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  // Session queue (deck): contains words that still need to be mastered in this session
+  const [deck, setDeck] = useState<WordItem[]>(() => [...words]);
+  const [initialTotal, setInitialTotal] = useState(() => words.length);
+  const [masteredCount, setMasteredCount] = useState(0);
+
   const [isFlipped, setIsFlipped] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [sessionStats, setSessionStats] = useState({ correct: 0, reviewAgain: 0 });
 
-  const currentWord = words[currentIndex];
+  const currentWord = deck[0] || null;
+  // backWord holds the content displayed on the back of the card.
+  // When flipping back after answering, it remains the previous word until the card faces front,
+  // preventing the user from seeing the new word's answer!
+  const [backWord, setBackWord] = useState<WordItem | null>(() => words[0] || null);
 
-  // Auto-play audio when new card appears if enabled
+  const wordsIdFingerprint = useMemo(() => {
+    return words.map(w => w.id).sort().join(',');
+  }, [words]);
+
+  // Synchronize deck only if the incoming pool of word IDs changes (e.g. lesson filter change)
   useEffect(() => {
-    if (autoPlayAudio && currentWord && !isFlipped && !completed) {
+    setDeck([...words]);
+    setInitialTotal(words.length);
+    setMasteredCount(0);
+    setBackWord(words[0] || null);
+    setIsFlipped(false);
+    setIsTransitioning(false);
+    setShowHint(false);
+    setCompleted(false);
+    setSessionStats({ correct: 0, reviewAgain: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wordsIdFingerprint]);
+
+  // Auto-play audio when new card appears facing front and transition is done
+  useEffect(() => {
+    if (autoPlayAudio && currentWord && !isFlipped && !completed && !isTransitioning) {
       speechService.speak(currentWord.word, language);
     }
-  }, [currentIndex, currentWord, language, autoPlayAudio, isFlipped, completed]);
+  }, [currentWord, language, autoPlayAudio, isFlipped, completed, isTransitioning]);
 
   const handleFlip = useCallback(() => {
-    setIsFlipped(prev => !prev);
-  }, []);
+    if (isTransitioning || !currentWord) return;
+    setIsFlipped(prev => {
+      const next = !prev;
+      if (next) {
+        // Flipping to back: ensure back face displays currentWord
+        setBackWord(currentWord);
+      }
+      return next;
+    });
+  }, [isTransitioning, currentWord]);
 
   const handleResponse = useCallback((wasCorrect: boolean) => {
-    if (!currentWord) return;
+    if (!currentWord || isTransitioning) return;
 
     onRecordReview(currentWord.id, wasCorrect);
+
     setSessionStats(prev => ({
       correct: prev.correct + (wasCorrect ? 1 : 0),
       reviewAgain: prev.reviewAgain + (wasCorrect ? 0 : 1),
     }));
 
-    if (currentIndex + 1 < words.length) {
-      setIsFlipped(false);
-      setShowHint(false);
-      setCurrentIndex(prev => prev + 1);
+    if (wasCorrect) {
+      // 1. "Gewusst!": Card is mastered in this session -> DO NOT REPEAT!
+      const nextMasteredCount = masteredCount + 1;
+      setMasteredCount(nextMasteredCount);
+
+      const nextDeck = deck.slice(1);
+
+      if (nextDeck.length === 0) {
+        // All cards in session mastered!
+        if (isFlipped) {
+          setIsTransitioning(true);
+          setIsFlipped(false);
+          setTimeout(() => {
+            setCompleted(true);
+            setIsTransitioning(false);
+            confetti({
+              particleCount: 80,
+              spread: 70,
+              origin: { y: 0.6 },
+            });
+          }, 380);
+        } else {
+          setCompleted(true);
+          confetti({
+            particleCount: 80,
+            spread: 70,
+            origin: { y: 0.6 },
+          });
+        }
+        return;
+      }
+
+      const nextWord = nextDeck[0];
+
+      if (isFlipped) {
+        // Card is currently flipped: animate back to front (0°)
+        setIsTransitioning(true);
+        setIsFlipped(false);
+        setShowHint(false);
+        // Update front of card to next question
+        setDeck(nextDeck);
+        // Keep back face showing currentWord during flip (380ms) so next answer is hidden!
+        setTimeout(() => {
+          setBackWord(nextWord);
+          setIsTransitioning(false);
+        }, 380);
+      } else {
+        // Not flipped: advance immediately
+        setDeck(nextDeck);
+        setBackWord(nextWord);
+        setShowHint(false);
+      }
     } else {
-      setCompleted(true);
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 },
-      });
+      // 2. "Noch üben": This card was NOT known -> MUST REPEAT in this session!
+      if (deck.length === 1) {
+        // Only 1 card left: repeats itself
+        if (isFlipped) {
+          setIsTransitioning(true);
+          setIsFlipped(false);
+          setShowHint(false);
+          setTimeout(() => {
+            setIsTransitioning(false);
+          }, 380);
+        } else {
+          setShowHint(false);
+        }
+      } else {
+        // Move currentWord to the back of the queue so it comes up again later
+        const nextDeck = [...deck.slice(1), currentWord];
+        const nextWord = nextDeck[0];
+
+        if (isFlipped) {
+          setIsTransitioning(true);
+          setIsFlipped(false);
+          setShowHint(false);
+          setDeck(nextDeck);
+          // Keep back face showing currentWord during flip (380ms)
+          setTimeout(() => {
+            setBackWord(nextWord);
+            setIsTransitioning(false);
+          }, 380);
+        } else {
+          setDeck(nextDeck);
+          setBackWord(nextWord);
+          setShowHint(false);
+        }
+      }
     }
-  }, [currentWord, currentIndex, words.length, onRecordReview]);
+  }, [currentWord, isTransitioning, onRecordReview, masteredCount, deck, isFlipped]);
 
   // Keyboard navigation: Space to flip, 1 for retry, 2 for correct
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (completed) return;
+      if (completed || isTransitioning) return;
       if (e.code === 'Space') {
         e.preventDefault();
         handleFlip();
@@ -87,7 +199,20 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [completed, handleFlip, handleResponse]);
+  }, [completed, isTransitioning, handleFlip, handleResponse]);
+
+  const handleRestartSession = () => {
+    setDeck([...words]);
+    setInitialTotal(words.length);
+    setMasteredCount(0);
+    setBackWord(words[0] || null);
+    setIsFlipped(false);
+    setIsTransitioning(false);
+    setShowHint(false);
+    setCompleted(false);
+    setSessionStats({ correct: 0, reviewAgain: 0 });
+    onRestart();
+  };
 
   if (!words || words.length === 0) {
     return (
@@ -100,7 +225,8 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
   }
 
   if (completed) {
-    const percentage = Math.round((sessionStats.correct / words.length) * 100);
+    const totalAttempts = sessionStats.correct + sessionStats.reviewAgain;
+    const percentage = totalAttempts > 0 ? Math.round((sessionStats.correct / totalAttempts) * 100) : 100;
     return (
       <div className="glass-panel animate-fade-in" style={{ padding: '3.5rem 2rem', textAlign: 'center', maxWidth: '580px', margin: '0 auto' }}>
         <div
@@ -119,9 +245,9 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
         >
           <Sparkles size={32} />
         </div>
-        <h2 style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>Großartig gemacht!</h2>
+        <h2 style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>Lernsession abgeschlossen! 🎉</h2>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '1.75rem' }}>
-          Du hast alle {words.length} Karteikarten dieser Runde geübt.
+          Du hast alle {initialTotal} Karteikarten dieser Einheit erfolgreich gemeistert!
         </p>
 
         <div
@@ -136,13 +262,13 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
             <div style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--success)' }}>
               {sessionStats.correct}
             </div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Gewusst</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Sofort gewusst</div>
           </div>
           <div style={{ background: 'var(--bg-surface-elevated)', padding: '1rem', borderRadius: 'var(--radius-md)' }}>
             <div style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--warning)' }}>
               {sessionStats.reviewAgain}
             </div>
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Wiederholen</div>
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Wiederholungen geübt</div>
           </div>
         </div>
 
@@ -152,14 +278,7 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
 
         <button
           type="button"
-          onClick={() => {
-            setCurrentIndex(0);
-            setIsFlipped(false);
-            setShowHint(false);
-            setCompleted(false);
-            setSessionStats({ correct: 0, reviewAgain: 0 });
-            onRestart();
-          }}
+          onClick={handleRestartSession}
           className="btn btn-primary btn-lg"
         >
           <RotateCw size={18} />
@@ -169,7 +288,12 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
     );
   }
 
+  if (!currentWord) {
+    return null;
+  }
+
   const posConfig = PART_OF_SPEECH_LABELS[currentWord.partOfSpeech] || PART_OF_SPEECH_LABELS.other;
+  const cardBackData = backWord || currentWord;
 
   return (
     <div style={{ maxWidth: '640px', margin: '0 auto' }}>
@@ -324,13 +448,19 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
           </div>
 
           {/* Card Back (German Meaning) */}
-          <div className="flip-card-face flip-card-back">
+          <div
+            className="flip-card-face flip-card-back"
+            style={{
+              opacity: isTransitioning ? 0 : 1,
+              transition: isTransitioning ? 'opacity 0.15s ease' : 'opacity 0.25s ease',
+            }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
               <span style={{ fontSize: '0.85rem', color: 'var(--primary-light)', fontWeight: 600 }}>
                 Bedeutung auf Deutsch
               </span>
               <AudioButton
-                text={currentWord.word}
+                text={cardBackData.word}
                 language={language}
                 size="md"
               />
@@ -347,10 +477,10 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
                   lineHeight: 1.25,
                 }}
               >
-                {currentWord.translation}
+                {cardBackData.translation}
               </div>
 
-              {currentWord.notes && (
+              {cardBackData.notes && (
                 <div
                   style={{
                     display: 'inline-block',
@@ -363,11 +493,11 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
                     border: '1px solid rgba(99, 102, 241, 0.25)',
                   }}
                 >
-                  💡 {currentWord.notes}
+                  💡 {cardBackData.notes}
                 </div>
               )}
 
-              {currentWord.exampleSentence && (
+              {cardBackData.exampleSentence && (
                 <div
                   style={{
                     background: 'rgba(0, 0, 0, 0.3)',
@@ -380,11 +510,11 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
                   }}
                 >
                   <p style={{ fontSize: '0.95rem', color: '#ffffff', marginBottom: '0.25rem', fontStyle: 'italic' }}>
-                    "{currentWord.exampleSentence}"
+                    "{cardBackData.exampleSentence}"
                   </p>
-                  {currentWord.exampleTranslation && (
+                  {cardBackData.exampleTranslation && (
                     <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                      🇩🇪 {currentWord.exampleTranslation}
+                      🇩🇪 {cardBackData.exampleTranslation}
                     </p>
                   )}
                 </div>
@@ -403,7 +533,7 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
                 color: 'var(--text-muted)',
               }}
             >
-              Original: <strong style={{ color: '#fff', marginLeft: '0.35rem' }}>{currentWord.word}</strong>
+              Original: <strong style={{ color: '#fff', marginLeft: '0.35rem' }}>{cardBackData.word}</strong>
             </div>
           </div>
         </div>
@@ -422,10 +552,13 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
         <button
           type="button"
           onClick={() => handleResponse(false)}
+          disabled={isTransitioning}
           className="btn btn-secondary btn-lg"
           style={{
-            borderColor: 'rgba(239, 68, 68, 0.3)',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
             color: '#fca5a5',
+            opacity: isTransitioning ? 0.6 : 1,
+            cursor: isTransitioning ? 'not-allowed' : 'pointer',
           }}
           title="Taste 1 drücken"
         >
@@ -436,8 +569,13 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
         <button
           type="button"
           onClick={handleFlip}
+          disabled={isTransitioning}
           className="btn btn-secondary"
-          style={{ padding: '0.85rem 1rem' }}
+          style={{
+            padding: '0.85rem 1rem',
+            opacity: isTransitioning ? 0.6 : 1,
+            cursor: isTransitioning ? 'not-allowed' : 'pointer',
+          }}
           title="Leertaste drücken"
           aria-label="Umdrehen"
         >
@@ -447,7 +585,12 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
         <button
           type="button"
           onClick={() => handleResponse(true)}
+          disabled={isTransitioning}
           className="btn btn-success btn-lg"
+          style={{
+            opacity: isTransitioning ? 0.6 : 1,
+            cursor: isTransitioning ? 'not-allowed' : 'pointer',
+          }}
           title="Taste 2 drücken"
         >
           <Check size={20} />
@@ -467,11 +610,13 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
           padding: '0 0.5rem',
         }}
       >
-        <span>Karte {currentIndex + 1} von {words.length}</span>
+        <span>
+          {masteredCount} von {initialTotal} gemeistert {deck.length > 0 ? `(${deck.length} im Stapel)` : ''}
+        </span>
         <div style={{ flex: 1, margin: '0 1rem', background: 'var(--bg-surface-elevated)', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
           <div
             style={{
-              width: `${((currentIndex + 1) / words.length) * 100}%`,
+              width: `${Math.min(100, Math.round((masteredCount / (initialTotal || 1)) * 100))}%`,
               height: '100%',
               background: 'var(--primary-gradient)',
               transition: 'width 0.3s ease',

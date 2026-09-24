@@ -43,7 +43,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
     return list.sort();
   }, [languageWords]);
 
-  const activeWords = useMemo(() => {
+  const activeWordIds = useMemo(() => {
     let pool = languageWords;
     if (selectedLesson !== 'all') {
       pool = pool.filter(w => w.lesson === selectedLesson);
@@ -51,8 +51,14 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
     if (filterDifficulty === 'difficult') {
       pool = pool.filter(w => w.box <= 2);
     }
-    return [...pool].sort(() => 0.5 - Math.random());
-  }, [languageWords, selectedLesson, filterDifficulty, shuffleKey]);
+    return [...pool].sort(() => 0.5 - Math.random()).map(w => w.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language, selectedLesson, filterDifficulty, shuffleKey, languageWords.map(w => w.id).sort().join(',')]);
+
+  const activeWords = useMemo(() => {
+    const wordMap = new Map(languageWords.map(w => [w.id, w]));
+    return activeWordIds.map(id => wordMap.get(id)).filter(Boolean) as WordItem[];
+  }, [activeWordIds, languageWords]);
 
   const totalInLanguage = languageWords.length;
   const masteredInLanguage = languageWords.filter(w => w.box >= 4).length;

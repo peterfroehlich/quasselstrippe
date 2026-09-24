@@ -22,6 +22,7 @@ interface WordManagerProps {
   language: Language;
   onUpdateWord: (word: WordItem) => void;
   onDeleteWord: (id: string) => void;
+  onDeleteLesson: (lesson: string) => void;
   onAddWord: (word: WordItem) => void;
   onImportWords: (words: WordItem[]) => void;
   onResetProgress: () => void;
@@ -32,6 +33,7 @@ export const WordManager: React.FC<WordManagerProps> = ({
   language,
   onUpdateWord,
   onDeleteWord,
+  onDeleteLesson,
   onAddWord,
   onImportWords,
   onResetProgress,
@@ -41,6 +43,8 @@ export const WordManager: React.FC<WordManagerProps> = ({
   const [editingWordId, setEditingWordId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<WordItem>>({});
   const [isAddingNew, setIsAddingNew] = useState(false);
+  const [lessonToDelete, setLessonToDelete] = useState<string | null>(null);
+  const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
   const [newWordData, setNewWordData] = useState<Partial<WordItem>>({
     word: '',
     translation: '',
@@ -59,6 +63,19 @@ export const WordManager: React.FC<WordManagerProps> = ({
   const lessons = useMemo(() => {
     return Array.from(new Set(languageWords.map(w => w.lesson))).filter(Boolean).sort();
   }, [languageWords]);
+
+  const lessonToDeleteWordCount = useMemo(() => {
+    if (!lessonToDelete) return 0;
+    return languageWords.filter(w => w.lesson === lessonToDelete).length;
+  }, [lessonToDelete, languageWords]);
+
+  const handleExecuteDeleteLesson = (lesson: string) => {
+    onDeleteLesson(lesson);
+    if (selectedLesson === lesson) {
+      setSelectedLesson('all');
+    }
+    setLessonToDelete(null);
+  };
 
   const filteredWords = useMemo(() => {
     return languageWords.filter(w => {
@@ -218,6 +235,16 @@ export const WordManager: React.FC<WordManagerProps> = ({
               onChange={handleImportFile}
             />
           </label>
+
+          <button
+            type="button"
+            onClick={() => setIsLessonModalOpen(true)}
+            className="btn btn-secondary btn-sm"
+            title="Lektionen anzeigen und verwalten"
+          >
+            <Layers size={15} />
+            <span>Lektionen ({lessons.length})</span>
+          </button>
 
           <button
             type="button"
@@ -391,12 +418,13 @@ export const WordManager: React.FC<WordManagerProps> = ({
           />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '0 1 240px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '0 1 auto', flexWrap: 'wrap' }}>
           <Filter size={16} color="var(--text-muted)" />
           <select
             value={selectedLesson}
             onChange={(e) => setSelectedLesson(e.target.value)}
             className="input-field"
+            style={{ minWidth: '220px' }}
           >
             <option value="all">Alle Lektionen ({languageWords.length})</option>
             {lessons.map(l => (
@@ -405,6 +433,32 @@ export const WordManager: React.FC<WordManagerProps> = ({
               </option>
             ))}
           </select>
+
+          {selectedLesson !== 'all' && (
+            <button
+              type="button"
+              onClick={() => setLessonToDelete(selectedLesson)}
+              className="btn btn-sm"
+              style={{
+                background: 'rgba(239, 68, 68, 0.12)',
+                color: '#ef4444',
+                border: '1px solid rgba(239, 68, 68, 0.35)',
+                padding: '0.5rem 0.85rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                fontWeight: 500,
+                fontSize: '0.85rem',
+                borderRadius: 'var(--radius-md)',
+              }}
+              title={`Lektion "${selectedLesson}" mit allen Vokabeln löschen`}
+            >
+              <Trash2 size={15} />
+              <span>Lektion löschen</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -593,6 +647,261 @@ export const WordManager: React.FC<WordManagerProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Modal: Lektionen Übersicht & Verwaltung */}
+      {isLessonModalOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(10, 15, 29, 0.75)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 999,
+            padding: '1rem',
+          }}
+          onClick={() => setIsLessonModalOpen(false)}
+        >
+          <div
+            className="glass-panel animate-scale-up"
+            style={{
+              maxWidth: '560px',
+              width: '100%',
+              maxHeight: '85vh',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '1.75rem',
+              border: '1px solid var(--border-subtle)',
+              background: 'var(--bg-surface)',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.5)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Layers size={20} color="var(--primary)" />
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#fff' }}>
+                  Lektionen verwalten ({lessons.length})
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLessonModalOpen(false)}
+                className="btn btn-ghost btn-sm"
+                style={{ padding: '0.35rem' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
+              Hier siehst du alle angelegten Lektionen für {language === 'en' ? 'Englisch' : 'Latein'}. Du kannst einzelne Lektionen herausfiltern oder eine ganze Lektion mitsamt aller zugehörigen Vokabeln löschen.
+            </p>
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.6rem', paddingRight: '0.35rem', marginBottom: '1.25rem' }}>
+              {lessons.length === 0 ? (
+                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  Keine Lektionen vorhanden.
+                </div>
+              ) : (
+                lessons.map(lessonName => {
+                  const count = languageWords.filter(w => w.lesson === lessonName).length;
+                  const isCurrent = selectedLesson === lessonName;
+                  return (
+                    <div
+                      key={lessonName}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.75rem',
+                        padding: '0.85rem 1rem',
+                        borderRadius: 'var(--radius-md)',
+                        background: isCurrent ? 'rgba(99, 102, 241, 0.12)' : 'var(--bg-surface-elevated)',
+                        border: isCurrent ? '1px solid var(--primary)' : '1px solid var(--border-subtle)',
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          📁 {lessonName}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                          {count} {count === 1 ? 'Vokabel' : 'Vokabeln'}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedLesson(lessonName);
+                            setIsLessonModalOpen(false);
+                          }}
+                          className={`btn btn-sm ${isCurrent ? 'btn-primary' : 'btn-secondary'}`}
+                          style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
+                        >
+                          {isCurrent ? 'Ausgewählt' : 'Anzeigen'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLessonToDelete(lessonName);
+                          }}
+                          className="btn btn-ghost btn-sm"
+                          style={{
+                            color: '#ef4444',
+                            padding: '0.35rem 0.6rem',
+                            background: 'rgba(239, 68, 68, 0.1)',
+                          }}
+                          title={`Lektion "${lessonName}" löschen`}
+                        >
+                          <Trash2 size={15} />
+                          <span style={{ fontSize: '0.8rem' }}>Löschen</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setIsLessonModalOpen(false)}
+                className="btn btn-secondary"
+              >
+                Schließen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal: Gesamte Lektion löschen */}
+      {lessonToDelete && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(10, 15, 29, 0.8)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1001,
+            padding: '1rem',
+          }}
+          onClick={() => setLessonToDelete(null)}
+        >
+          <div
+            className="glass-panel animate-scale-up"
+            style={{
+              maxWidth: '480px',
+              width: '100%',
+              padding: '2rem',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 25px rgba(239, 68, 68, 0.2)',
+              background: 'var(--bg-surface)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', marginBottom: '1.25rem' }}>
+              <div
+                style={{
+                  width: '46px',
+                  height: '46px',
+                  borderRadius: '50%',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ef4444',
+                  flexShrink: 0,
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                }}
+              >
+                <Trash2 size={24} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#fff' }}>Gesamte Lektion löschen?</h3>
+                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  Unwiderrufliche Aktion
+                </p>
+              </div>
+            </div>
+
+            <div
+              style={{
+                background: 'var(--bg-surface-elevated)',
+                borderRadius: 'var(--radius-md)',
+                padding: '1rem 1.15rem',
+                marginBottom: '1.5rem',
+                border: '1px solid var(--border-subtle)',
+              }}
+            >
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+                Lektion:
+              </div>
+              <div style={{ fontWeight: 600, fontSize: '1.1rem', color: '#fff', marginBottom: '0.5rem' }}>
+                📁 {lessonToDelete}
+              </div>
+              <div
+                style={{
+                  fontSize: '0.86rem',
+                  color: '#f87171',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: 'var(--radius-sm)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                }}
+              >
+                <span>⚠️</span>
+                <span>
+                  Alle <strong>{lessonToDeleteWordCount} Vokabeln</strong> dieser Lektion werden dauerhaft gelöscht.
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setLessonToDelete(null)}
+                className="btn btn-secondary"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="button"
+                onClick={() => handleExecuteDeleteLesson(lessonToDelete)}
+                className="btn"
+                style={{
+                  background: '#dc2626',
+                  color: '#fff',
+                  border: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.45rem',
+                  fontWeight: 600,
+                  padding: '0.65rem 1.25rem',
+                  borderRadius: 'var(--radius-md)',
+                  boxShadow: '0 4px 14px rgba(220, 38, 38, 0.4)',
+                  cursor: 'pointer',
+                }}
+              >
+                <Trash2 size={16} />
+                <span>Lektion & alle Wörter löschen</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

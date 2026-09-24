@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Volume2, Check, ArrowRight, Lightbulb, RotateCcw, Award } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { WordItem, Language } from '../../types/vocabulary';
@@ -17,6 +17,7 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
   onRecordReview,
   onRestart,
 }) => {
+  const [spellingWords, setSpellingWords] = useState<WordItem[]>(() => [...words]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userInput, setUserInput] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -26,16 +27,38 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
   const [isFinished, setIsFinished] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const currentWord = words[currentIndex];
+
+  const wordsIdFingerprint = useMemo(() => {
+    return words.map(w => w.id).sort().join(',');
+  }, [words]);
 
   useEffect(() => {
-    if (currentWord && !isFinished) {
+    setSpellingWords([...words]);
+    setCurrentIndex(0);
+    setUserInput('');
+    setIsSubmitted(false);
+    setIsCorrect(null);
+    setRevealedHints(0);
+    setScore(0);
+    setIsFinished(false);
+  }, [wordsIdFingerprint]);
+
+  const currentWord = spellingWords[currentIndex];
+
+  useEffect(() => {
+    if (currentWord && !isFinished && !isSubmitted) {
       speechService.speak(currentWord.word, language);
       inputRef.current?.focus();
     }
-  }, [currentIndex, currentWord, language, isFinished]);
+  }, [currentIndex, currentWord, language, isFinished, isSubmitted]);
 
-  const normalize = (str: string) => str.trim().toLowerCase().replace(/[.,!?;:]/g, '');
+  // Normalize input and target word: trim, lowercase, ignore punctuation/apostrophes/quotes, collapse spaces
+  const normalize = (str: string) =>
+    str
+      .trim()
+      .toLowerCase()
+      .replace(/[.,!?;:'"’‘`´]/g, '')
+      .replace(/\s+/g, ' ');
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -52,24 +75,51 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
   };
 
   const handleNext = () => {
-    if (currentIndex + 1 < words.length) {
+    if (currentIndex + 1 < spellingWords.length) {
       setCurrentIndex(prev => prev + 1);
       setUserInput('');
       setIsSubmitted(false);
       setIsCorrect(null);
       setRevealedHints(0);
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
     } else {
       setIsFinished(true);
       confetti({ particleCount: 90, spread: 75, origin: { y: 0.6 } });
     }
   };
 
+  // Keyboard shortcut: Press Enter to proceed to next word when result is shown
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && isSubmitted) {
+        e.preventDefault();
+        handleNext();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSubmitted, currentIndex, spellingWords.length]);
+
   const handleRevealHint = () => {
     if (!currentWord) return;
     setRevealedHints(prev => Math.min(currentWord.word.length - 1, prev + 1));
   };
 
-  if (!words || words.length === 0) {
+  const handleRestart = () => {
+    setSpellingWords([...words]);
+    setCurrentIndex(0);
+    setUserInput('');
+    setIsSubmitted(false);
+    setIsCorrect(null);
+    setRevealedHints(0);
+    setScore(0);
+    setIsFinished(false);
+    onRestart();
+  };
+
+  if (!spellingWords || spellingWords.length === 0) {
     return (
       <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center' }}>
         <p style={{ color: 'var(--text-secondary)' }}>Keine Vokabeln vorhanden.</p>
@@ -78,7 +128,7 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
   }
 
   if (isFinished) {
-    const percentage = Math.round((score / words.length) * 100);
+    const percentage = Math.round((score / spellingWords.length) * 100);
     return (
       <div className="glass-panel animate-fade-in" style={{ padding: '3.5rem 2rem', textAlign: 'center', maxWidth: '580px', margin: '0 auto' }}>
         <div
@@ -99,7 +149,7 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
         <h2 style={{ fontSize: '1.85rem', marginBottom: '0.5rem' }}>Schreibtraining abgeschlossen!</h2>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
           Du hast <strong style={{ color: '#fff' }}>{score}</strong> von{' '}
-          <strong style={{ color: '#fff' }}>{words.length}</strong> Wörtern fehlerfrei geschrieben.
+          <strong style={{ color: '#fff' }}>{spellingWords.length}</strong> Wörtern fehlerfrei geschrieben.
         </p>
 
         <div
@@ -116,16 +166,7 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
 
         <button
           type="button"
-          onClick={() => {
-            setCurrentIndex(0);
-            setUserInput('');
-            setIsSubmitted(false);
-            setIsCorrect(null);
-            setRevealedHints(0);
-            setScore(0);
-            setIsFinished(false);
-            onRestart();
-          }}
+          onClick={handleRestart}
           className="btn btn-primary btn-lg"
         >
           <RotateCcw size={18} />
@@ -149,7 +190,7 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
           {currentWord.lesson}
         </span>
         <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-          Wort {currentIndex + 1} von {words.length} • Richtig: {score}
+          Wort {currentIndex + 1} von {spellingWords.length} • Richtig: {score}
         </span>
       </div>
 

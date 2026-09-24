@@ -70,6 +70,19 @@ export async function apiDeleteWord(id: string): Promise<void> {
   }
 }
 
+export async function apiDeleteLesson(lesson: string, language?: Language): Promise<{ deletedCount: number }> {
+  const res = await fetch(`${API_BASE}/words/delete-lesson`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lesson, language }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Failed to delete lesson');
+  }
+  return res.json();
+}
+
 export async function apiRecordReview(wordId: string, wasCorrect: boolean): Promise<WordItem> {
   const res = await fetch(`${API_BASE}/words/${encodeURIComponent(wordId)}/review`, {
     method: 'POST',
