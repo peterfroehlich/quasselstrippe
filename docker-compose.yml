@@ -1,0 +1,16 @@
+services:
+  quasselstrippe:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quasselstrippe
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - DATABASE_PATH=/data/quasselstrippe.db
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      # Persistent SQLite database storage
+      - ./data:/data
+    restart: unless-stopped

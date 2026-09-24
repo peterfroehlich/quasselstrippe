@@ -1,4 +1,5 @@
 import type { Language, WorksheetAnalysisResponse, ExtractedWordCandidate } from '../types/vocabulary';
+import { apiAnalyzeWorksheet } from './api';
 
 export interface SampleWorksheet {
   id: string;
@@ -184,6 +185,27 @@ export async function analyzeWorksheetWithGemini(
   suggestedLesson: string,
   apiKey: string
 ): Promise<WorksheetAnalysisResponse> {
+  // 1. Try server-side analysis first
+  try {
+    const serverResult = await apiAnalyzeWorksheet({
+      base64Data,
+      mimeType,
+      language,
+      suggestedLesson,
+      apiKey,
+    });
+    if (serverResult && Array.isArray(serverResult.words)) {
+      return serverResult;
+    }
+  } catch (serverErr) {
+    console.warn('[Gemini] Server analysis unavailable or failed, falling back to direct client call', serverErr);
+  }
+
+  // 2. Direct client fallback
+  if (!apiKey) {
+    throw new Error('Kein API-Schlüssel für die Analyse angegeben.');
+  }
+
   const targetLangName = language === 'en' ? 'Englisch' : 'Latein';
   
   const systemPrompt = `Du bist ein erfahrener Fremdsprachenlehrer und Vokabeldidaktiker für deutsche Schüler.

@@ -2,11 +2,16 @@ import React, { useState, useEffect } from 'react';
 import type { AppMode, Language, WordItem, AppSettings } from './types/vocabulary';
 import { 
   loadWords, 
-  saveWords, 
-  recordReviewProgress, 
   loadSettings, 
+  loadSettingsAsync,
   saveSettings, 
-  INITIAL_WORDS 
+  addWord,
+  addWords,
+  updateWord,
+  deleteWord,
+  recordReviewProgress,
+  resetReviewProgress,
+  resetToDefaults,
 } from './services/storage';
 import { Header } from './components/Header';
 import { LearnerDashboard } from './components/learner/LearnerDashboard';
@@ -25,7 +30,7 @@ export const App: React.FC = () => {
     async function init() {
       const storedWords = await loadWords();
       setWords(storedWords);
-      const storedSettings = loadSettings();
+      const storedSettings = await loadSettingsAsync();
       setSettings(storedSettings);
       if (storedSettings.activeLanguage) {
         setActiveLanguage(storedSettings.activeLanguage);
@@ -35,16 +40,16 @@ export const App: React.FC = () => {
     init();
   }, []);
 
-  const handleLanguageChange = (lang: Language) => {
+  const handleLanguageChange = async (lang: Language) => {
     setActiveLanguage(lang);
     const updated = { ...settings, activeLanguage: lang };
     setSettings(updated);
-    saveSettings(updated);
+    await saveSettings(updated);
   };
 
-  const handleSaveSettings = (newSettings: AppSettings) => {
+  const handleSaveSettings = async (newSettings: AppSettings) => {
     setSettings(newSettings);
-    saveSettings(newSettings);
+    await saveSettings(newSettings);
   };
 
   const handleRecordReview = async (wordId: string, wasCorrect: boolean) => {
@@ -53,27 +58,23 @@ export const App: React.FC = () => {
   };
 
   const handleAddWords = async (newWords: WordItem[]) => {
-    const updated = [...newWords, ...words];
+    const updated = await addWords(newWords);
     setWords(updated);
-    await saveWords(updated);
   };
 
   const handleAddWord = async (newWord: WordItem) => {
-    const updated = [newWord, ...words];
+    const updated = await addWord(newWord);
     setWords(updated);
-    await saveWords(updated);
   };
 
   const handleUpdateWord = async (updatedWord: WordItem) => {
-    const updated = words.map(w => w.id === updatedWord.id ? updatedWord : w);
+    const updated = await updateWord(updatedWord);
     setWords(updated);
-    await saveWords(updated);
   };
 
   const handleDeleteWord = async (id: string) => {
-    const updated = words.filter(w => w.id !== id);
+    const updated = await deleteWord(id);
     setWords(updated);
-    await saveWords(updated);
   };
 
   const handleImportWords = async (importedList: WordItem[]) => {
@@ -84,26 +85,18 @@ export const App: React.FC = () => {
       }
       return item;
     });
-    const updated = [...sanitized, ...words];
+    const updated = await addWords(sanitized);
     setWords(updated);
-    await saveWords(updated);
   };
 
   const handleResetProgress = async () => {
-    const updated = words.map(w => ({
-      ...w,
-      box: 1,
-      correctCount: 0,
-      incorrectCount: 0,
-      lastReviewedAt: undefined,
-    }));
+    const updated = await resetReviewProgress();
     setWords(updated);
-    await saveWords(updated);
   };
 
   const handleResetToDefaults = async () => {
-    setWords(INITIAL_WORDS);
-    await saveWords(INITIAL_WORDS);
+    const updated = await resetToDefaults();
+    setWords(updated);
   };
 
   if (!isLoaded) {
