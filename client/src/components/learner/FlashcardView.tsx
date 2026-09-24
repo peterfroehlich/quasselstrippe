@@ -225,15 +225,23 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
         handleFlip();
       } else if (e.key === '1') {
         e.preventDefault();
-        handleResponse(false);
+        if (isFlipped) {
+          handleResponse(false);
+        } else {
+          handleFlip();
+        }
       } else if (e.key === '2') {
         e.preventDefault();
-        handleResponse(true);
+        if (isFlipped) {
+          handleResponse(true);
+        } else {
+          handleFlip();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [completed, isTransitioning, handleFlip, handleResponse]);
+  }, [completed, isTransitioning, isFlipped, handleFlip, handleResponse]);
 
   const handleRestartSession = () => {
     setDeck([...words]);
@@ -712,16 +720,23 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
       >
         <button
           type="button"
-          onClick={() => handleResponse(false)}
+          onClick={isFlipped ? () => handleResponse(false) : handleFlip}
           disabled={isTransitioning}
           className="btn btn-secondary btn-lg"
           style={{
-            border: '1px solid rgba(239, 68, 68, 0.35)',
-            color: '#fca5a5',
-            opacity: isTransitioning ? 0.6 : 1,
+            border: isFlipped
+              ? '1px solid rgba(239, 68, 68, 0.45)'
+              : '1px solid var(--border-subtle)',
+            background: isFlipped
+              ? 'rgba(239, 68, 68, 0.12)'
+              : 'var(--bg-surface-elevated)',
+            color: isFlipped ? '#fca5a5' : 'var(--text-muted)',
+            boxShadow: isFlipped ? '0 4px 14px rgba(239, 68, 68, 0.25)' : 'none',
+            opacity: isTransitioning ? 0.6 : (isFlipped ? 1 : 0.6),
             cursor: isTransitioning ? 'not-allowed' : 'pointer',
+            transition: 'all 0.25s ease',
           }}
-          title="Taste 1 drücken"
+          title={isFlipped ? "Taste 1 drücken" : "Karte umdrehen (Taste 1 oder Leertaste)"}
         >
           <X size={20} />
           <span>Noch üben (1)</span>
@@ -736,6 +751,10 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
             padding: '0.85rem 1rem',
             opacity: isTransitioning ? 0.6 : 1,
             cursor: isTransitioning ? 'not-allowed' : 'pointer',
+            border: !isFlipped ? '1px solid var(--primary)' : '1px solid var(--border-medium)',
+            color: !isFlipped ? 'var(--primary-light)' : 'var(--text-primary)',
+            boxShadow: !isFlipped ? '0 0 12px rgba(99, 102, 241, 0.25)' : 'none',
+            transition: 'all 0.25s ease',
           }}
           title="Leertaste drücken"
           aria-label="Umdrehen"
@@ -745,14 +764,20 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
 
         <button
           type="button"
-          onClick={() => handleResponse(true)}
+          onClick={isFlipped ? () => handleResponse(true) : handleFlip}
           disabled={isTransitioning}
-          className="btn btn-success btn-lg"
+          className={`btn ${isFlipped ? 'btn-success' : 'btn-secondary'} btn-lg`}
           style={{
-            opacity: isTransitioning ? 0.6 : 1,
+            border: isFlipped
+              ? undefined
+              : '1px solid var(--border-subtle)',
+            color: isFlipped ? '#ffffff' : 'var(--text-muted)',
+            boxShadow: isFlipped ? '0 4px 16px rgba(16, 185, 129, 0.35)' : 'none',
+            opacity: isTransitioning ? 0.6 : (isFlipped ? 1 : 0.6),
             cursor: isTransitioning ? 'not-allowed' : 'pointer',
+            transition: 'all 0.25s ease',
           }}
-          title="Taste 2 drücken"
+          title={isFlipped ? "Taste 2 drücken" : "Karte umdrehen (Taste 2 oder Leertaste)"}
         >
           <Check size={20} />
           <span>Gewusst! (2)</span>
@@ -784,7 +809,7 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
             }}
           />
         </div>
-        <span>Tipp: [Leertaste] = Umdrehen</span>
+        <span>{isFlipped ? 'Tipp: [1] = Noch üben, [2] = Gewusst' : 'Tipp: [Leertaste / 1 / 2] = Umdrehen'}</span>
       </div>
     </div>
   );
