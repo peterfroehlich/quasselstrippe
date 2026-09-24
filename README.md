@@ -1,5 +1,7 @@
 # Quasselstrippe 🦜
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
 Eine moderne, didaktisch durchdachte Vokabel-Lernapp für Schüler (Englisch & Latein) mit Leitner-5-Fächer-System, Sprachausgabe, KI-gestütztem Arbeitsblatt-Scanner (Gemini Vision) und SQLite-Persistenz.
 
 Die Anwendung ist in **Frontend** (React 19 + TypeScript + Vite + Nginx) und **Backend** (Node.js 22 + Express + SQLite) aufgeteilt und vollständig für den Betrieb in **Kubernetes (K8s)** sowie **Docker Compose** ausgelegt.
@@ -193,3 +195,10 @@ npm run dev
 | `GET` | `/api/settings` | Einstellungen abrufen |
 | `PUT` | `/api/settings` | Einstellungen speichern |
 | `POST` | `/api/ai/analyze-worksheet` | Schul-Arbeitsblatt per Gemini Vision analysieren |
+
+---
+
+## 📄 Lizenz
+
+Dieses Projekt ist als freie Software unter der **[GNU Affero General Public License v3 (AGPL-3.0)](LICENSE)** lizenziert.
+
