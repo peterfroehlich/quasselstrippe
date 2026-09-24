@@ -306,6 +306,32 @@ h1, h2, h3, h4, h5, h6 {
   animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes shimmerSlide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+.loading-shimmer-bar {
+  animation: shimmerSlide 1.5s ease-in-out infinite;
+}
+
 /* Input Fields */
 .input-field {
   width: 100%;

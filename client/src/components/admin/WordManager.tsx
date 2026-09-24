@@ -402,37 +402,58 @@ export const WordManager: React.FC<WordManagerProps> = ({
         style={{
           display: 'flex',
           flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           gap: '1rem',
           marginBottom: '1.5rem',
         }}
       >
-        <div style={{ position: 'relative', flex: '1 1 280px' }}>
-          <Search size={17} color="var(--text-muted)" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+        <div style={{ position: 'relative', flex: '1 1 300px', minWidth: '260px' }}>
+          <Search
+            size={17}
+            color="var(--text-muted)"
+            style={{
+              position: 'absolute',
+              left: '14px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              pointerEvents: 'none',
+            }}
+          />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Nach Vokabel, Übersetzung oder Notiz suchen..."
             className="input-field"
-            style={{ paddingLeft: '2.4rem' }}
+            style={{ paddingLeft: '2.5rem', width: '100%' }}
           />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '0 1 auto', flexWrap: 'wrap' }}>
-          <Filter size={16} color="var(--text-muted)" />
-          <select
-            value={selectedLesson}
-            onChange={(e) => setSelectedLesson(e.target.value)}
-            className="input-field"
-            style={{ minWidth: '220px' }}
-          >
-            <option value="all">Alle Lektionen ({languageWords.length})</option>
-            {lessons.map(l => (
-              <option key={l} value={l}>
-                {l} ({languageWords.filter(w => w.lesson === l).length})
-              </option>
-            ))}
-          </select>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.6rem',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Filter size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+            <select
+              value={selectedLesson}
+              onChange={(e) => setSelectedLesson(e.target.value)}
+              className="input-field"
+              style={{ minWidth: '200px' }}
+            >
+              <option value="all">Alle Lektionen ({languageWords.length})</option>
+              {lessons.map(l => (
+                <option key={l} value={l}>
+                  {l} ({languageWords.filter(w => w.lesson === l).length})
+                </option>
+              ))}
+            </select>
+          </div>
 
           {selectedLesson !== 'all' && (
             <button
@@ -443,7 +464,7 @@ export const WordManager: React.FC<WordManagerProps> = ({
                 background: 'rgba(239, 68, 68, 0.12)',
                 color: '#ef4444',
                 border: '1px solid rgba(239, 68, 68, 0.35)',
-                padding: '0.5rem 0.85rem',
+                padding: '0.55rem 0.85rem',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.4rem',
@@ -452,6 +473,7 @@ export const WordManager: React.FC<WordManagerProps> = ({
                 fontWeight: 500,
                 fontSize: '0.85rem',
                 borderRadius: 'var(--radius-md)',
+                flexShrink: 0,
               }}
               title={`Lektion "${selectedLesson}" mit allen Vokabeln löschen`}
             >

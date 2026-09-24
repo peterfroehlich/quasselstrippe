@@ -5,7 +5,8 @@ import {
   X, 
   HelpCircle, 
   Sparkles, 
-  Layers
+  Layers,
+  ArrowLeftRight
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { PART_OF_SPEECH_LABELS } from '../../types/vocabulary';
@@ -39,6 +40,32 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
   const [completed, setCompleted] = useState(false);
   const [sessionStats, setSessionStats] = useState({ correct: 0, reviewAgain: 0 });
 
+  // Inverted language direction: false = Target -> DE, true = DE -> Target
+  const [isInverted, setIsInverted] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('quasselstrippe_flashcards_inverted') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleInvert = () => {
+    if (isTransitioning) return;
+    setIsInverted(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('quasselstrippe_flashcards_inverted', String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+    if (isFlipped) {
+      setIsFlipped(false);
+      setShowHint(false);
+    }
+  };
+
   const currentWord = deck[0] || null;
   // backWord holds the content displayed on the back of the card.
   // When flipping back after answering, it remains the previous word until the card faces front,
@@ -63,12 +90,19 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wordsIdFingerprint]);
 
-  // Auto-play audio when new card appears facing front and transition is done
+  // Auto-play audio:
+  // - In normal mode (!isInverted): speak target word when new card faces front
+  // - In inverted mode (isInverted): speak target word when card is flipped to back
   useEffect(() => {
-    if (autoPlayAudio && currentWord && !isFlipped && !completed && !isTransitioning) {
+    if (!autoPlayAudio || !currentWord || completed || isTransitioning) return;
+
+    if (!isInverted && !isFlipped) {
       speechService.speak(currentWord.word, language);
+    } else if (isInverted && isFlipped) {
+      const backWordData = backWord || currentWord;
+      speechService.speak(backWordData.word, language);
     }
-  }, [currentWord, language, autoPlayAudio, isFlipped, completed, isTransitioning]);
+  }, [currentWord, language, autoPlayAudio, isFlipped, completed, isTransitioning, isInverted, backWord]);
 
   const handleFlip = useCallback(() => {
     if (isTransitioning || !currentWord) return;
@@ -305,9 +339,11 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
           justifyContent: 'space-between',
           marginBottom: '1rem',
           padding: '0 0.5rem',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
           <span
             className="badge"
             style={{
@@ -329,6 +365,84 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
             {posConfig.de}
           </span>
         </div>
+
+        {/* Direction Toggle Switch */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={isInverted}
+          onClick={handleToggleInvert}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.6rem',
+            padding: '0.35rem 0.65rem 0.35rem 0.8rem',
+            borderRadius: 'var(--radius-full)',
+            background: isInverted ? 'rgba(99, 102, 241, 0.2)' : 'var(--bg-surface-elevated)',
+            border: isInverted ? '1px solid var(--primary-light)' : '1px solid var(--border-medium)',
+            color: isInverted ? '#ffffff' : 'var(--text-secondary)',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+            boxShadow: isInverted ? '0 0 14px rgba(99, 102, 241, 0.3)' : 'var(--shadow-sm)',
+            userSelect: 'none',
+          }}
+          title={isInverted ? "Sprachrichtung: Deutsch → Fremdsprache (Klicken zum Wechseln)" : "Sprachrichtung: Fremdsprache → Deutsch (Klicken zum Wechseln)"}
+        >
+          <ArrowLeftRight
+            size={14}
+            style={{
+              color: isInverted ? 'var(--primary-light)' : 'var(--text-muted)',
+              transition: 'transform 0.3s ease',
+              transform: isInverted ? 'rotate(180deg)' : 'none',
+            }}
+          />
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+            {isInverted ? (
+              <>
+                <span>🇩🇪 Deutsch</span>
+                <span style={{ color: 'var(--primary-light)', fontWeight: 700 }}>→</span>
+                <span>{language === 'en' ? '🇬🇧 Englisch' : '🏛️ Latein'}</span>
+              </>
+            ) : (
+              <>
+                <span>{language === 'en' ? '🇬🇧 Englisch' : '🏛️ Latein'}</span>
+                <span style={{ color: 'var(--primary-light)', fontWeight: 700 }}>→</span>
+                <span>🇩🇪 Deutsch</span>
+              </>
+            )}
+          </span>
+
+          {/* Visual Toggle Track & Sliding Thumb */}
+          <div
+            style={{
+              width: '32px',
+              height: '18px',
+              borderRadius: '9px',
+              background: isInverted ? 'var(--primary-gradient)' : 'rgba(255, 255, 255, 0.16)',
+              position: 'relative',
+              transition: 'background 0.25s ease',
+              flexShrink: 0,
+              marginLeft: '0.15rem',
+              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.3)',
+            }}
+          >
+            <div
+              style={{
+                width: '14px',
+                height: '14px',
+                borderRadius: '50%',
+                background: '#ffffff',
+                position: 'absolute',
+                top: '2px',
+                left: isInverted ? '16px' : '2px',
+                transition: 'left 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.35)',
+              }}
+            />
+          </div>
+        </button>
 
         {/* Leitner Box Level */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }} title={`Leitner Kasten ${currentWord.box} von 5`}>
@@ -362,17 +476,23 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
           tabIndex={0}
           aria-label="Karteikarte anklicken zum Umdrehen"
         >
-          {/* Card Front (Target Language) */}
+          {/* Card Front */}
           <div className="flip-card-face">
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
               <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                {language === 'en' ? 'Englisch' : 'Latein'}
+                {isInverted ? '🇩🇪 Deutsch' : (language === 'en' ? '🇬🇧 Englisch' : '🏛️ Latein')}
               </span>
-              <AudioButton
-                text={currentWord.word}
-                language={language}
-                size="md"
-              />
+              {!isInverted ? (
+                <AudioButton
+                  text={currentWord.word}
+                  language={language}
+                  size="md"
+                />
+              ) : (
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', background: 'var(--bg-surface-elevated)', padding: '0.25rem 0.6rem', borderRadius: 'var(--radius-sm)' }}>
+                  Vorderseite
+                </span>
+              )}
             </div>
 
             <div style={{ margin: 'auto 0', padding: '1.5rem 0' }}>
@@ -384,19 +504,26 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
                   color: '#ffffff',
                   marginBottom: '0.5rem',
                   letterSpacing: '-0.02em',
+                  lineHeight: 1.25,
                 }}
               >
-                {currentWord.word}
+                {isInverted ? currentWord.translation : currentWord.word}
               </div>
 
-              {currentWord.phonetic && (
+              {!isInverted && currentWord.phonetic && (
                 <div style={{ fontSize: '1rem', color: 'var(--text-muted)', fontFamily: 'monospace' }}>
                   {currentWord.phonetic}
                 </div>
               )}
 
-              {/* Optional hint: Example sentence in English */}
-              {showHint && currentWord.exampleSentence && (
+              {isInverted && currentWord.notes && (
+                <div style={{ fontSize: '0.92rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+                  💡 {currentWord.notes}
+                </div>
+              )}
+
+              {/* Optional hint: Example sentence */}
+              {showHint && !isInverted && currentWord.exampleSentence && (
                 <div
                   className="animate-fade-in"
                   style={{
@@ -413,6 +540,24 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
                   "{currentWord.exampleSentence}"
                 </div>
               )}
+
+              {showHint && isInverted && currentWord.exampleTranslation && (
+                <div
+                  className="animate-fade-in"
+                  style={{
+                    marginTop: '1.25rem',
+                    padding: '0.75rem 1rem',
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    borderRadius: 'var(--radius-md)',
+                    fontSize: '0.95rem',
+                    color: 'var(--text-secondary)',
+                    fontStyle: 'italic',
+                    maxWidth: '460px',
+                  }}
+                >
+                  🇩🇪 "{currentWord.exampleTranslation}"
+                </div>
+              )}
             </div>
 
             <div
@@ -425,7 +570,7 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
                 paddingTop: '1rem',
               }}
             >
-              {currentWord.exampleSentence ? (
+              {(!isInverted && currentWord.exampleSentence) || (isInverted && currentWord.exampleTranslation) ? (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -447,7 +592,7 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
             </div>
           </div>
 
-          {/* Card Back (German Meaning) */}
+          {/* Card Back */}
           <div
             className="flip-card-face flip-card-back"
             style={{
@@ -457,7 +602,9 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
               <span style={{ fontSize: '0.85rem', color: 'var(--primary-light)', fontWeight: 600 }}>
-                Bedeutung auf Deutsch
+                {isInverted
+                  ? (language === 'en' ? '🇬🇧 Englisch (Lösung)' : '🏛️ Latein (Lösung)')
+                  : '🇩🇪 Bedeutung auf Deutsch'}
               </span>
               <AudioButton
                 text={cardBackData.word}
@@ -470,15 +617,21 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
               <div
                 style={{
                   fontFamily: 'var(--font-display)',
-                  fontSize: '2.1rem',
+                  fontSize: isInverted ? '2.4rem' : '2.1rem',
                   fontWeight: 800,
                   color: '#ffffff',
-                  marginBottom: '0.75rem',
+                  marginBottom: '0.5rem',
                   lineHeight: 1.25,
                 }}
               >
-                {cardBackData.translation}
+                {isInverted ? cardBackData.word : cardBackData.translation}
               </div>
+
+              {isInverted && cardBackData.phonetic && (
+                <div style={{ fontSize: '1rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginBottom: '0.75rem' }}>
+                  {cardBackData.phonetic}
+                </div>
+              )}
 
               {cardBackData.notes && (
                 <div
@@ -533,7 +686,15 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
                 color: 'var(--text-muted)',
               }}
             >
-              Original: <strong style={{ color: '#fff', marginLeft: '0.35rem' }}>{cardBackData.word}</strong>
+              {isInverted ? (
+                <>
+                  Deutsch: <strong style={{ color: '#fff', marginLeft: '0.35rem' }}>{cardBackData.translation}</strong>
+                </>
+              ) : (
+                <>
+                  Original: <strong style={{ color: '#fff', marginLeft: '0.35rem' }}>{cardBackData.word}</strong>
+                </>
+              )}
             </div>
           </div>
         </div>

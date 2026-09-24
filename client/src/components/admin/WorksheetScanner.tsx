@@ -8,8 +8,8 @@ import {
   AlertCircle, 
   FileText, 
   Plus,
-  RefreshCw,
-  Eye
+  Eye,
+  Loader2
 } from 'lucide-react';
 import { PART_OF_SPEECH_LABELS } from '../../types/vocabulary';
 import type { 
@@ -355,13 +355,58 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
                     justifyContent: 'center',
                     marginBottom: '1.25rem',
                     border: '1px solid var(--border-subtle)',
+                    position: 'relative',
                   }}
                 >
                   <img
                     src={imagePreview}
                     alt="Arbeitsblatt Vorschau"
-                    style={{ maxWidth: '100%', maxHeight: '220px', objectFit: 'contain' }}
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '220px',
+                      objectFit: 'contain',
+                      filter: isLoading ? 'blur(2px) brightness(0.55)' : 'none',
+                      transition: 'filter 0.3s ease',
+                    }}
                   />
+
+                  {isLoading && (
+                    <div
+                      className="animate-fade-in"
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        background: 'rgba(13, 17, 23, 0.72)',
+                        backdropFilter: 'blur(3px)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '0.6rem',
+                        padding: '1rem',
+                        textAlign: 'center',
+                        zIndex: 2,
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '44px',
+                          height: '44px',
+                          borderRadius: '50%',
+                          background: 'rgba(99, 102, 241, 0.2)',
+                          border: '2px solid rgba(99, 102, 241, 0.45)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Loader2 size={24} color="var(--primary-light)" className="animate-spin" />
+                      </div>
+                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#ffffff' }}>
+                        Gemini KI analysiert...
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ marginBottom: '1rem' }}>
@@ -372,6 +417,7 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
                     type="text"
                     value={lessonName}
                     onChange={(e) => setLessonName(e.target.value)}
+                    disabled={isLoading}
                     placeholder={language === 'en' ? 'z.B. Unit 3: Wildlife & Nature' : 'z.B. Lektion 2: In Foro Romano'}
                     className="input-field"
                   />
@@ -383,11 +429,18 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
                 onClick={handleAnalyze}
                 disabled={isLoading}
                 className="btn btn-primary btn-lg"
-                style={{ width: '100%', justifyContent: 'center' }}
+                style={{
+                  width: '100%',
+                  justifyContent: 'center',
+                  opacity: isLoading ? 0.85 : 1,
+                  cursor: isLoading ? 'wait' : 'pointer',
+                  position: 'relative',
+                  overflow: 'hidden',
+                }}
               >
                 {isLoading ? (
                   <>
-                    <RefreshCw size={18} className="animate-spin" />
+                    <Loader2 size={20} className="animate-spin" />
                     <span>Gemini analysiert Arbeitsblatt...</span>
                   </>
                 ) : (
@@ -399,6 +452,64 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {isLoading && (
+        <div
+          className="glass-panel animate-fade-in"
+          style={{
+            padding: '2rem 1.5rem',
+            marginBottom: '2rem',
+            textAlign: 'center',
+            border: '1px solid rgba(99, 102, 241, 0.35)',
+            background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.08) 100%)',
+            boxShadow: '0 0 35px rgba(99, 102, 241, 0.2)',
+          }}
+        >
+          <div
+            style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              background: 'rgba(99, 102, 241, 0.2)',
+              border: '2px solid rgba(99, 102, 241, 0.45)',
+              color: 'var(--primary-light)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '1rem',
+            }}
+          >
+            <Loader2 size={28} className="animate-spin" />
+          </div>
+          <h3 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.35rem' }}>
+            Gemini KI analysiert dein Arbeitsblatt...
+          </h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', maxWidth: '520px', margin: '0 auto 1.25rem auto' }}>
+            Optische Texterkennung, Wortarten-Klassifizierung und Generierung deutscher Übersetzungen werden durchgeführt.
+          </p>
+          <div
+            style={{
+              maxWidth: '280px',
+              height: '4px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '2px',
+              margin: '0 auto',
+              overflow: 'hidden',
+              position: 'relative',
+            }}
+          >
+            <div
+              className="loading-shimmer-bar"
+              style={{
+                width: '50%',
+                height: '100%',
+                background: 'var(--primary-gradient)',
+                borderRadius: '2px',
+              }}
+            />
+          </div>
         </div>
       )}
 
