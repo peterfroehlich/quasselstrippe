@@ -218,7 +218,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 }`;
 
   const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-  const models = ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-1.5-flash'];
+  const models = ['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash'];
   let lastError: Error | null = null;
 
   for (const model of models) {
@@ -260,13 +260,21 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
       }
 
       const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) {
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      const textPart = parts.find((p: any) => typeof p.text === 'string' && p.text.trim())?.text;
+      if (!textPart) {
         throw new Error('Keine Antwort von Gemini erhalten.');
       }
 
-      const cleanJson = text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-      const parsed = JSON.parse(cleanJson);
+      let parsed: any;
+      try {
+        const jsonMatch = textPart.match(/\{[\s\S]*\}/);
+        const jsonStr = jsonMatch ? jsonMatch[0] : textPart.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+        parsed = JSON.parse(jsonStr);
+      } catch (jsonErr) {
+        console.error('Failed to parse Gemini JSON output', textPart, jsonErr);
+        throw new Error('Gemini-Antwort konnte nicht als Vokabelliste interpretiert werden.');
+      }
 
       const wordsWithSelection = (parsed.words || []).map((w: ExtractedWordCandidate) => ({
         ...w,
