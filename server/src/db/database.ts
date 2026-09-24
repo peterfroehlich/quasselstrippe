@@ -373,3 +373,37 @@ export function updateSettings(newSettings: Partial<AppSettings>): AppSettings {
   stmt.run('settings', JSON.stringify(merged));
   return merged;
 }
+
+/**
+ * Health check verification for Kubernetes readiness probes.
+ * Verifies that SQLite is reachable and responding to queries.
+ */
+export function checkDatabaseHealth(): boolean {
+  try {
+    const db = getDatabase();
+    const result = db.prepare('SELECT 1 AS ok').get() as { ok: number } | undefined;
+    return result?.ok === 1;
+  } catch (err) {
+    console.error('[Database] Readiness health check failed:', err);
+    return false;
+  }
+}
+
+/**
+ * Gracefully checkpoint WAL log and close database connection on SIGTERM/SIGINT.
+ */
+export function closeDatabase(): void {
+  if (dbInstance) {
+    try {
+      console.log('[Database] Checkpointing WAL and closing database connection...');
+      dbInstance.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      dbInstance.close();
+      console.log('[Database] Database closed cleanly.');
+    } catch (err) {
+      console.error('[Database] Error while closing database:', err);
+    } finally {
+      dbInstance = null;
+    }
+  }
+}
+

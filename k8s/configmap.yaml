@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quasselstrippe-config
+  namespace: quasselstrippe
+  labels:
+    app.kubernetes.io/name: quasselstrippe
+data:
+  NODE_ENV: "production"
+  PORT: "3001"
+  DATABASE_PATH: "/data/quasselstrippe.db"
+  BACKEND_URL: "http://quasselstrippe-backend:3001"

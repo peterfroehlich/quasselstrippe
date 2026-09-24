@@ -16,7 +16,9 @@
     "build:server": "npm run build -w server",
     "start": "npm run start -w server",
     "docker:build": "docker build -t quasselstrippe .",
-    "docker:run": "docker run -p 3000:3000 -v $(pwd)/data:/data quasselstrippe"
+    "docker:build:backend": "docker build -f Dockerfile.backend -t quasselstrippe-backend .",
+    "docker:build:frontend": "docker build -f Dockerfile.frontend -t quasselstrippe-frontend .",
+    "docker:run": "docker compose up --build"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

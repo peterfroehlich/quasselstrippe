@@ -1,0 +1,38 @@
+# Stage 1: Build client React application
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+# Copy root workspace package definitions
+COPY package.json package-lock.json ./
+COPY client/package.json ./client/
+
+# Install client dependencies
+RUN npm ci -w client
+
+# Copy client source code
+COPY client/ ./client/
+
+# Build production bundle with Vite
+RUN npm run build -w client
+
+# Stage 2: Serve static assets with Nginx
+FROM nginx:alpine AS runner
+
+ENV BACKEND_URL=http://quasselstrippe-backend:3001 \
+    NGINX_ENVSUBST_FILTER="BACKEND_URL"
+
+# Copy compiled frontend assets
+COPY --from=builder /app/client/dist /usr/share/nginx/html
+
+# Copy Nginx template and entrypoint configuration hook
+COPY client/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY client/docker-entrypoint.sh /docker-entrypoint.d/40-envsubst-backend.sh
+RUN chmod +x /docker-entrypoint.d/40-envsubst-backend.sh
+
+EXPOSE 80
+
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
+  CMD wget -qO- http://localhost:80/healthz || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]
