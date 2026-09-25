@@ -10,16 +10,19 @@ import {
   Check, 
   X,
   Layers,
-  Filter
+  Filter,
+  User
 } from 'lucide-react';
 import { PART_OF_SPEECH_LABELS } from '../../types/vocabulary';
-import type { WordItem, Language, PartOfSpeech } from '../../types/vocabulary';
+import type { WordItem, Language, PartOfSpeech, UserProfile } from '../../types/vocabulary';
 import { AudioButton } from '../common/AudioButton';
 import { exportWordsToJson } from '../../services/storage';
 
 interface WordManagerProps {
   words: WordItem[];
   language: Language;
+  profiles?: UserProfile[];
+  activeProfile?: UserProfile | null;
   onUpdateWord: (word: WordItem) => void;
   onDeleteWord: (id: string) => void;
   onDeleteLesson: (lesson: string) => void;
@@ -31,6 +34,8 @@ interface WordManagerProps {
 export const WordManager: React.FC<WordManagerProps> = ({
   words,
   language,
+  profiles = [],
+  activeProfile,
   onUpdateWord,
   onDeleteWord,
   onDeleteLesson,
@@ -40,6 +45,7 @@ export const WordManager: React.FC<WordManagerProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLesson, setSelectedLesson] = useState<string>('all');
+  const [selectedProfileScope, setSelectedProfileScope] = useState<string>('all');
   const [editingWordId, setEditingWordId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<WordItem>>({});
   const [isAddingNew, setIsAddingNew] = useState(false);
@@ -54,6 +60,7 @@ export const WordManager: React.FC<WordManagerProps> = ({
     exampleSentence: '',
     exampleTranslation: '',
     notes: '',
+    profileId: activeProfile?.id || null,
   });
 
   const languageWords = useMemo(() => {
@@ -80,6 +87,12 @@ export const WordManager: React.FC<WordManagerProps> = ({
   const filteredWords = useMemo(() => {
     return languageWords.filter(w => {
       const matchLesson = selectedLesson === 'all' || w.lesson === selectedLesson;
+      const matchProfile =
+        selectedProfileScope === 'all'
+          ? true
+          : selectedProfileScope === 'shared'
+          ? !w.profileId
+          : w.profileId === selectedProfileScope;
       const term = searchTerm.toLowerCase().trim();
       const matchSearch =
         !term ||
@@ -87,9 +100,9 @@ export const WordManager: React.FC<WordManagerProps> = ({
         w.translation.toLowerCase().includes(term) ||
         w.notes?.toLowerCase().includes(term) ||
         w.lesson.toLowerCase().includes(term);
-      return matchLesson && matchSearch;
+      return matchLesson && matchProfile && matchSearch;
     });
-  }, [languageWords, selectedLesson, searchTerm]);
+  }, [languageWords, selectedLesson, selectedProfileScope, searchTerm]);
 
   const handleStartEdit = (word: WordItem) => {
     setEditingWordId(word.id);
@@ -112,6 +125,7 @@ export const WordManager: React.FC<WordManagerProps> = ({
       exampleTranslation: editFormData.exampleTranslation?.trim(),
       notes: editFormData.notes?.trim(),
       phonetic: editFormData.phonetic?.trim(),
+      profileId: editFormData.profileId === 'shared' || !editFormData.profileId ? null : editFormData.profileId,
     });
 
     setEditingWordId(null);
@@ -121,6 +135,9 @@ export const WordManager: React.FC<WordManagerProps> = ({
   const handleCreateNew = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newWordData.word?.trim() || !newWordData.translation?.trim()) return;
+
+    const assignedProfileId =
+      newWordData.profileId === 'shared' || !newWordData.profileId ? null : newWordData.profileId;
 
     const newItem: WordItem = {
       id: `${language}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -137,6 +154,7 @@ export const WordManager: React.FC<WordManagerProps> = ({
       correctCount: 0,
       incorrectCount: 0,
       createdAt: Date.now(),
+      profileId: assignedProfileId,
     };
 
     onAddWord(newItem);
@@ -150,6 +168,7 @@ export const WordManager: React.FC<WordManagerProps> = ({
       exampleSentence: '',
       exampleTranslation: '',
       notes: '',
+      profileId: null,
     });
   };
 
@@ -335,6 +354,24 @@ export const WordManager: React.FC<WordManagerProps> = ({
                   ))}
                 </select>
               </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                  Zuweisung / Sichtbarkeit
+                </label>
+                <select
+                  value={newWordData.profileId || 'shared'}
+                  onChange={(e) => setNewWordData({ ...newWordData, profileId: e.target.value === 'shared' ? null : e.target.value })}
+                  className="input-field"
+                >
+                  <option value="shared">🌐 Gemeinsam (für alle Schüler)</option>
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      👤 {p.avatar} {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
@@ -444,12 +481,31 @@ export const WordManager: React.FC<WordManagerProps> = ({
               value={selectedLesson}
               onChange={(e) => setSelectedLesson(e.target.value)}
               className="input-field"
-              style={{ minWidth: '200px' }}
+              style={{ minWidth: '190px' }}
             >
               <option value="all">Alle Lektionen ({languageWords.length})</option>
               {lessons.map(l => (
                 <option key={l} value={l}>
                   {l} ({languageWords.filter(w => w.lesson === l).length})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <User size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+            <select
+              value={selectedProfileScope}
+              onChange={(e) => setSelectedProfileScope(e.target.value)}
+              className="input-field"
+              style={{ minWidth: '180px' }}
+              title="Nach Zuweisung filtern"
+            >
+              <option value="all">Alle Vokabeln</option>
+              <option value="shared">🌐 Nur Gemeinsame</option>
+              {profiles.map(p => (
+                <option key={p.id} value={p.id}>
+                  👤 {p.avatar} {p.name}
                 </option>
               ))}
             </select>
@@ -545,10 +601,24 @@ export const WordManager: React.FC<WordManagerProps> = ({
                             value={editFormData.partOfSpeech || 'noun'}
                             onChange={(e) => setEditFormData({ ...editFormData, partOfSpeech: e.target.value as PartOfSpeech })}
                             className="input-field"
-                            style={{ padding: '0.35rem 0.6rem' }}
+                            style={{ padding: '0.35rem 0.6rem', marginBottom: '0.3rem' }}
                           >
                             {Object.entries(PART_OF_SPEECH_LABELS).map(([k, v]) => (
                               <option key={k} value={k}>{v.badge} - {v.de}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={editFormData.profileId || 'shared'}
+                            onChange={(e) => setEditFormData({ ...editFormData, profileId: e.target.value === 'shared' ? null : e.target.value })}
+                            className="input-field"
+                            style={{ padding: '0.35rem 0.6rem' }}
+                            title="Zuweisung"
+                          >
+                            <option value="shared">🌐 Gemeinsam</option>
+                            {profiles.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                👤 {p.avatar} {p.name}
+                              </option>
                             ))}
                           </select>
                         </td>
@@ -556,24 +626,40 @@ export const WordManager: React.FC<WordManagerProps> = ({
                           Kasten {item.box}
                         </td>
                         <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', gap: '0.4rem' }}>
+                          <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
                             <button
                               type="button"
                               onClick={handleSaveEdit}
                               className="btn btn-success btn-sm"
-                              style={{ padding: '0.4rem' }}
+                              style={{
+                                minWidth: '44px',
+                                minHeight: '44px',
+                                padding: 0,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
                               title="Speichern"
+                              aria-label="Speichern"
                             >
-                              <Check size={15} />
+                              <Check size={18} />
                             </button>
                             <button
                               type="button"
                               onClick={() => setEditingWordId(null)}
                               className="btn btn-secondary btn-sm"
-                              style={{ padding: '0.4rem' }}
+                              style={{
+                                minWidth: '44px',
+                                minHeight: '44px',
+                                padding: 0,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
                               title="Abbrechen"
+                              aria-label="Abbrechen"
                             >
-                              <X size={15} />
+                              <X size={18} />
                             </button>
                           </div>
                         </td>
@@ -611,17 +697,46 @@ export const WordManager: React.FC<WordManagerProps> = ({
                         )}
                       </td>
                       <td style={{ padding: '0.85rem 1rem' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
-                          <span
-                            className="badge"
-                            style={{
-                              background: `${pos.color}20`,
-                              color: pos.color,
-                              fontSize: '0.7rem',
-                            }}
-                          >
-                            {pos.badge}
-                          </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <span
+                              className="badge"
+                              style={{
+                                background: `${pos.color}20`,
+                                color: pos.color,
+                                fontSize: '0.7rem',
+                              }}
+                            >
+                              {pos.badge}
+                            </span>
+                            {!item.profileId ? (
+                              <span
+                                className="badge"
+                                style={{
+                                  background: 'rgba(59, 130, 246, 0.15)',
+                                  color: '#60a5fa',
+                                  fontSize: '0.68rem',
+                                  textTransform: 'none',
+                                }}
+                                title="Gemeinsame Vokabel (für alle Schüler sichtbar)"
+                              >
+                                🌐 Gemeinsam
+                              </span>
+                            ) : (
+                              <span
+                                className="badge"
+                                style={{
+                                  background: 'rgba(99, 102, 241, 0.2)',
+                                  color: '#a5b4fc',
+                                  fontSize: '0.68rem',
+                                  textTransform: 'none',
+                                }}
+                                title={`Individuell zugewiesen an Schüler: ${profiles.find(p => p.id === item.profileId)?.name || 'Profil'}`}
+                              >
+                                👤 {profiles.find(p => p.id === item.profileId)?.name || 'Individuell'}
+                              </span>
+                            )}
+                          </div>
                           <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                             {item.lesson}
                           </span>
@@ -636,15 +751,25 @@ export const WordManager: React.FC<WordManagerProps> = ({
                         </div>
                       </td>
                       <td style={{ padding: '0.85rem 1rem', textAlign: 'right' }}>
-                        <div style={{ display: 'inline-flex', gap: '0.35rem' }}>
+                        <div style={{ display: 'inline-flex', gap: '0.5rem', alignItems: 'center' }}>
                           <button
                             type="button"
                             onClick={() => handleStartEdit(item)}
                             className="btn btn-ghost btn-sm"
-                            style={{ padding: '0.4rem', color: 'var(--text-secondary)' }}
+                            style={{
+                              minWidth: '44px',
+                              minHeight: '44px',
+                              padding: 0,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'var(--text-secondary)',
+                              borderRadius: 'var(--radius-sm)',
+                            }}
                             title="Bearbeiten"
+                            aria-label="Bearbeiten"
                           >
-                            <Edit3 size={15} />
+                            <Edit3 size={17} />
                           </button>
                           <button
                             type="button"
@@ -654,10 +779,20 @@ export const WordManager: React.FC<WordManagerProps> = ({
                               }
                             }}
                             className="btn btn-ghost btn-sm"
-                            style={{ padding: '0.4rem', color: 'var(--danger)' }}
+                            style={{
+                              minWidth: '44px',
+                              minHeight: '44px',
+                              padding: 0,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'var(--danger)',
+                              borderRadius: 'var(--radius-sm)',
+                            }}
                             title="Löschen"
+                            aria-label="Löschen"
                           >
-                            <Trash2 size={15} />
+                            <Trash2 size={17} />
                           </button>
                         </div>
                       </td>
@@ -712,7 +847,15 @@ export const WordManager: React.FC<WordManagerProps> = ({
                 type="button"
                 onClick={() => setIsLessonModalOpen(false)}
                 className="btn btn-ghost btn-sm"
-                style={{ padding: '0.35rem' }}
+                style={{
+                  minWidth: '44px',
+                  minHeight: '44px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                title="Schließen"
+                aria-label="Schließen"
               >
                 <X size={18} />
               </button>

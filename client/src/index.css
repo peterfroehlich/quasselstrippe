@@ -341,7 +341,7 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: var(--radius-md);
   color: var(--text-primary);
   font-family: var(--font-body);
-  font-size: 0.95rem;
+  font-size: 16px; /* Prevents iOS Safari auto-zoom on focus */
   outline: none;
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
@@ -358,3 +358,20 @@ h1, h2, h3, h4, h5, h6 {
 select.input-field {
   cursor: pointer;
 }
+
+/* Touch & Mobile/Tablet optimizations (iOS Safari auto-zoom prevention & Apple HIG) */
+input, select, textarea {
+  font-size: 16px !important; /* Critical: iOS Safari auto-zooms when font-size < 16px */
+}
+
+button, a, input, select, textarea, [role="button"], .speaker-btn, .flip-card-inner {
+  touch-action: manipulation; /* Eliminates 300ms tap delay and prevents double-tap zoom on controls */
+}
+
+/* Prevent accidental text highlight while flipping cards or tapping interactive elements */
+.flip-card-inner, .flip-card-face, button, .badge {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+

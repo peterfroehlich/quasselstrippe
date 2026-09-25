@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import dotenv from 'dotenv';
 import { getDatabase, checkDatabaseHealth, closeDatabase } from './db/database.js';
 import { wordsRouter } from './routes/words.js';
+import { profilesRouter } from './routes/profiles.js';
 import { settingsRouter } from './routes/settings.js';
 import { aiRouter } from './routes/ai.js';
 
@@ -96,6 +97,7 @@ app.get('/api/info', (_req, res) => {
 
 // API Routes
 app.use('/api/words', wordsRouter);
+app.use('/api/profiles', profilesRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/ai', aiRouter);
 

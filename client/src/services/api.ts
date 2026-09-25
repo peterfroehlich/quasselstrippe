@@ -1,6 +1,7 @@
-import type { WordItem, AppSettings, Language, WorksheetAnalysisResponse } from '../types/vocabulary';
+import type { WordItem, AppSettings, Language, WorksheetAnalysisResponse, UserProfile, LearnerStats } from '../types/vocabulary';
 
 const API_BASE = '/api';
+
 
 export async function checkServerHealth(): Promise<boolean> {
   try {
@@ -11,8 +12,76 @@ export async function checkServerHealth(): Promise<boolean> {
   }
 }
 
-export async function apiGetWords(language?: Language): Promise<WordItem[]> {
-  const url = language ? `${API_BASE}/words?language=${encodeURIComponent(language)}` : `${API_BASE}/words`;
+// --- Profiles API ---
+
+export async function apiGetProfiles(): Promise<UserProfile[]> {
+  const res = await fetch(`${API_BASE}/profiles`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch profiles: ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function apiCreateProfile(profile: { name: string; avatar?: string; color?: string }): Promise<UserProfile> {
+  const res = await fetch(`${API_BASE}/profiles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Failed to create profile');
+  }
+  return res.json();
+}
+
+export async function apiUpdateProfile(profile: UserProfile): Promise<UserProfile> {
+  const res = await fetch(`${API_BASE}/profiles/${encodeURIComponent(profile.id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Failed to update profile');
+  }
+  return res.json();
+}
+
+export async function apiDeleteProfile(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/profiles/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Failed to delete profile');
+  }
+}
+
+export async function apiGetLearnerStats(profileId: string, language?: Language): Promise<LearnerStats> {
+  const params = new URLSearchParams();
+  if (language) params.append('language', language);
+  const qs = params.toString();
+  const url = qs
+    ? `${API_BASE}/profiles/${encodeURIComponent(profileId)}/stats?${qs}`
+    : `${API_BASE}/profiles/${encodeURIComponent(profileId)}/stats`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Failed to fetch learner stats');
+  }
+  return res.json();
+}
+
+
+// --- Words API ---
+
+export async function apiGetWords(language?: Language, profileId?: string): Promise<WordItem[]> {
+  const params = new URLSearchParams();
+  if (language) params.append('language', language);
+  if (profileId) params.append('profileId', profileId);
+  const qs = params.toString();
+  const url = qs ? `${API_BASE}/words?${qs}` : `${API_BASE}/words`;
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Failed to fetch words from server: ${res.statusText}`);
@@ -70,11 +139,11 @@ export async function apiDeleteWord(id: string): Promise<void> {
   }
 }
 
-export async function apiDeleteLesson(lesson: string, language?: Language): Promise<{ deletedCount: number }> {
+export async function apiDeleteLesson(lesson: string, language?: Language, profileId?: string): Promise<{ deletedCount: number }> {
   const res = await fetch(`${API_BASE}/words/delete-lesson`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lesson, language }),
+    body: JSON.stringify({ lesson, language, profileId }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -83,11 +152,11 @@ export async function apiDeleteLesson(lesson: string, language?: Language): Prom
   return res.json();
 }
 
-export async function apiRecordReview(wordId: string, wasCorrect: boolean): Promise<WordItem> {
+export async function apiRecordReview(wordId: string, wasCorrect: boolean, profileId?: string): Promise<WordItem> {
   const res = await fetch(`${API_BASE}/words/${encodeURIComponent(wordId)}/review`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ wasCorrect }),
+    body: JSON.stringify({ wasCorrect, profileId }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -96,9 +165,11 @@ export async function apiRecordReview(wordId: string, wasCorrect: boolean): Prom
   return res.json();
 }
 
-export async function apiResetProgress(): Promise<WordItem[]> {
+export async function apiResetProgress(profileId?: string): Promise<WordItem[]> {
   const res = await fetch(`${API_BASE}/words/reset-progress`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profileId }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));

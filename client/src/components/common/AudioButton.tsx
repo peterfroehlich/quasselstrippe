@@ -68,6 +68,8 @@ export const AudioButton: React.FC<AudioButtonProps> = ({
           borderColor: isSpeaking ? 'var(--primary)' : undefined,
           color: isSpeaking ? 'var(--primary-light)' : undefined,
           gap: '0.4rem',
+          minHeight: '44px',
+          minWidth: '44px',
         }}
         title={`Anhören (${language === 'en' ? 'Englisch' : 'Latein'})`}
         aria-label={`Aussprache für ${text}`}
@@ -81,9 +83,9 @@ export const AudioButton: React.FC<AudioButtonProps> = ({
   }
 
   const dimensionStyles = {
-    sm: { width: '32px', height: '32px' },
-    md: { width: '42px', height: '42px' },
-    lg: { width: '52px', height: '52px' },
+    sm: { width: '38px', height: '38px', minWidth: '44px', minHeight: '44px' },
+    md: { width: '44px', height: '44px', minWidth: '44px', minHeight: '44px' },
+    lg: { width: '54px', height: '54px', minWidth: '54px', minHeight: '54px' },
   };
 
   return (

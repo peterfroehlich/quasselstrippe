@@ -15,11 +15,12 @@ import type { WordItem } from '../types.js';
 
 export const wordsRouter = Router();
 
-// GET /api/words - List all words (optional filter by language)
+// GET /api/words - List all words (optional filter by language and profileId)
 wordsRouter.get('/', (req: Request, res: Response) => {
   try {
     const language = typeof req.query.language === 'string' ? req.query.language : undefined;
-    const words = getAllWords(language);
+    const profileId = typeof req.query.profileId === 'string' ? req.query.profileId : undefined;
+    const words = getAllWords(language, profileId);
     res.json(words);
   } catch (error) {
     console.error('Error fetching words:', error);
@@ -27,10 +28,14 @@ wordsRouter.get('/', (req: Request, res: Response) => {
   }
 });
 
-// POST /api/words/reset-progress - Reset all Leitner review progress
-wordsRouter.post('/reset-progress', (_req: Request, res: Response) => {
+// POST /api/words/reset-progress - Reset Leitner review progress (optionally for a specific profile)
+wordsRouter.post('/reset-progress', (req: Request, res: Response) => {
   try {
-    const words = resetReviewProgress();
+    const profileId =
+      typeof req.body?.profileId === 'string'
+        ? req.body.profileId
+        : (typeof req.query.profileId === 'string' ? req.query.profileId : undefined);
+    const words = resetReviewProgress(profileId);
     res.json({ message: 'Review progress reset successfully', words });
   } catch (error) {
     console.error('Error resetting progress:', error);
@@ -68,7 +73,8 @@ wordsRouter.post('/batch', (req: Request, res: Response) => {
 wordsRouter.get('/:id', (req: Request, res: Response) => {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const word = getWordById(id);
+    const profileId = typeof req.query.profileId === 'string' ? req.query.profileId : undefined;
+    const word = getWordById(id, profileId);
     if (!word) {
       return res.status(404).json({ error: 'Word not found' });
     }
@@ -103,6 +109,7 @@ wordsRouter.post('/', (req: Request, res: Response) => {
       incorrectCount: payload.incorrectCount ?? 0,
       lastReviewedAt: payload.lastReviewedAt,
       createdAt: payload.createdAt ?? Date.now(),
+      profileId: payload.profileId || null,
     };
 
     const created = insertWord(wordItem);
@@ -117,7 +124,8 @@ wordsRouter.post('/', (req: Request, res: Response) => {
 wordsRouter.put('/:id', (req: Request, res: Response) => {
   try {
     const wordId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const existing = getWordById(wordId);
+    const profileId = typeof req.query.profileId === 'string' ? req.query.profileId : undefined;
+    const existing = getWordById(wordId, profileId);
     if (!existing) {
       return res.status(404).json({ error: 'Word not found' });
     }
@@ -126,6 +134,7 @@ wordsRouter.put('/:id', (req: Request, res: Response) => {
       ...existing,
       ...req.body,
       id: wordId,
+      profileId: req.body.profileId !== undefined ? req.body.profileId : existing.profileId,
     };
 
     const saved = updateWord(updatedWord);
@@ -187,12 +196,17 @@ wordsRouter.delete('/:id', (req: Request, res: Response) => {
 wordsRouter.post('/:id/review', (req: Request, res: Response) => {
   try {
     const wordId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const { wasCorrect } = req.body;
+    const { wasCorrect, profileId } = req.body;
     if (typeof wasCorrect !== 'boolean') {
       return res.status(400).json({ error: 'wasCorrect boolean is required' });
     }
 
-    const updated = recordReview(wordId, wasCorrect);
+    const pId =
+      typeof profileId === 'string'
+        ? profileId
+        : (typeof req.query.profileId === 'string' ? req.query.profileId : undefined);
+
+    const updated = recordReview(wordId, wasCorrect, pId);
     if (!updated) {
       return res.status(404).json({ error: 'Word not found' });
     }

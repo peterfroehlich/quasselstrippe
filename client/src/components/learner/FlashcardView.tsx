@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   RotateCw, 
   Check, 
@@ -39,6 +39,14 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
   const [showHint, setShowHint] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [sessionStats, setSessionStats] = useState({ correct: 0, reviewAgain: 0 });
+
+  // Touch Swipe Gesture State (iPad & mobile touch support)
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+  const [dragOffset, setDragOffset] = useState<number>(0);
+  const isTouchDevice = useMemo(() => {
+    return typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+  }, []);
 
   // Inverted language direction: false = Target -> DE, true = DE -> Target
   const [isInverted, setIsInverted] = useState<boolean>(() => {
@@ -242,6 +250,51 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [completed, isTransitioning, isFlipped, handleFlip, handleResponse]);
+
+  // Touch swipe gestures (iPad & mobile touch)
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (isTransitioning) return;
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || isTransitioning) return;
+    const deltaX = e.touches[0].clientX - touchStartX.current;
+    const deltaY = e.touches[0].clientY - (touchStartY.current || 0);
+    // Only drag horizontally if horizontal movement dominates
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 10) {
+      setDragOffset(Math.max(-100, Math.min(100, deltaX)));
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || isTransitioning) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
+    const deltaY = e.changedTouches[0].clientY - (touchStartY.current || 0);
+    touchStartX.current = null;
+    touchStartY.current = null;
+    setDragOffset(0);
+
+    // Minimum swipe distance of 55px and dominantly horizontal
+    if (Math.abs(deltaX) > 55 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
+      if (deltaX > 0) {
+        // Swipe Right -> Correct / "Gewusst!"
+        if (isFlipped) {
+          handleResponse(true);
+        } else {
+          handleFlip();
+        }
+      } else {
+        // Swipe Left -> Repeat / "Noch üben"
+        if (isFlipped) {
+          handleResponse(false);
+        } else {
+          handleFlip();
+        }
+      }
+    }
+  };
 
   const handleRestartSession = () => {
     setDeck([...words]);
@@ -480,9 +533,18 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
         <div
           className={`flip-card-inner ${isFlipped ? 'is-flipped' : ''}`}
           onClick={handleFlip}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{
+            transform: dragOffset !== 0
+              ? `${isFlipped ? 'rotateY(180deg) ' : ''}translateX(${dragOffset}px) rotateZ(${dragOffset * 0.03}deg)`
+              : undefined,
+            transition: dragOffset !== 0 ? 'none' : undefined,
+          }}
           role="button"
           tabIndex={0}
-          aria-label="Karteikarte anklicken zum Umdrehen"
+          aria-label="Karteikarte anklicken oder wischen zum Umdrehen und Bewerten"
         >
           {/* Card Front */}
           <div className="flip-card-face">
@@ -736,10 +798,10 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
             cursor: isTransitioning ? 'not-allowed' : 'pointer',
             transition: 'all 0.25s ease',
           }}
-          title={isFlipped ? "Taste 1 drücken" : "Karte umdrehen (Taste 1 oder Leertaste)"}
+          title={isFlipped ? "Taste 1 drücken oder nach links wischen" : "Karte umdrehen"}
         >
           <X size={20} />
-          <span>Noch üben (1)</span>
+          <span>{isTouchDevice ? 'Noch üben' : 'Noch üben (1)'}</span>
         </button>
 
         <button
@@ -749,6 +811,8 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
           className="btn btn-secondary"
           style={{
             padding: '0.85rem 1rem',
+            minWidth: '44px',
+            minHeight: '44px',
             opacity: isTransitioning ? 0.6 : 1,
             cursor: isTransitioning ? 'not-allowed' : 'pointer',
             border: !isFlipped ? '1px solid var(--primary)' : '1px solid var(--border-medium)',
@@ -756,7 +820,7 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
             boxShadow: !isFlipped ? '0 0 12px rgba(99, 102, 241, 0.25)' : 'none',
             transition: 'all 0.25s ease',
           }}
-          title="Leertaste drücken"
+          title="Umdrehen (Leertaste oder tippen)"
           aria-label="Umdrehen"
         >
           <RotateCw size={19} />
@@ -777,10 +841,10 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
             cursor: isTransitioning ? 'not-allowed' : 'pointer',
             transition: 'all 0.25s ease',
           }}
-          title={isFlipped ? "Taste 2 drücken" : "Karte umdrehen (Taste 2 oder Leertaste)"}
+          title={isFlipped ? "Taste 2 drücken oder nach rechts wischen" : "Karte umdrehen"}
         >
           <Check size={20} />
-          <span>Gewusst! (2)</span>
+          <span>{isTouchDevice ? 'Gewusst!' : 'Gewusst! (2)'}</span>
         </button>
       </div>
 
@@ -794,12 +858,14 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
           fontSize: '0.85rem',
           color: 'var(--text-muted)',
           padding: '0 0.5rem',
+          flexWrap: 'wrap',
+          gap: '0.5rem',
         }}
       >
         <span>
           {masteredCount} von {initialTotal} gemeistert {deck.length > 0 ? `(${deck.length} im Stapel)` : ''}
         </span>
-        <div style={{ flex: 1, margin: '0 1rem', background: 'var(--bg-surface-elevated)', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
+        <div style={{ flex: 1, minWidth: '120px', margin: '0 0.75rem', background: 'var(--bg-surface-elevated)', height: '6px', borderRadius: '3px', overflow: 'hidden' }}>
           <div
             style={{
               width: `${Math.min(100, Math.round((masteredCount / (initialTotal || 1)) * 100))}%`,
@@ -809,7 +875,11 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
             }}
           />
         </div>
-        <span>{isFlipped ? 'Tipp: [1] = Noch üben, [2] = Gewusst' : 'Tipp: [Leertaste / 1 / 2] = Umdrehen'}</span>
+        <span style={{ fontSize: '0.8rem', color: isTouchDevice ? 'var(--primary-light)' : 'var(--text-muted)' }}>
+          {isTouchDevice
+            ? (isFlipped ? '👆 Wischen: Rechts = Gewusst, Links = Noch üben' : '👆 Antippen zum Umdrehen | Wischen zum Bewerten')
+            : (isFlipped ? 'Tipp: [1] = Noch üben, [2] = Gewusst' : 'Tipp: [Leertaste / 1 / 2] = Umdrehen')}
+        </span>
       </div>
     </div>
   );
