@@ -6,9 +6,7 @@ import {
   Grid, 
   Filter, 
   Shuffle, 
-  Flame, 
-  CheckCircle, 
-  BookOpen 
+  Flame 
 } from 'lucide-react';
 import type { WordItem, Language, StudyMode } from '../../types/vocabulary';
 import { FlashcardView } from './FlashcardView';
@@ -61,7 +59,6 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
   }, [activeWordIds, languageWords]);
 
   const totalInLanguage = languageWords.length;
-  const masteredInLanguage = languageWords.filter(w => w.box >= 4).length;
   const needPractice = languageWords.filter(w => w.box <= 2).length;
 
   const handleShuffle = () => {
@@ -70,60 +67,6 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
 
   return (
     <div style={{ maxWidth: '980px', margin: '0 auto', padding: '1.5rem 1rem 4rem 1rem' }}>
-      <div
-        className="glass-panel"
-        style={{
-          padding: '1.5rem 2rem',
-          marginBottom: '2rem',
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '1.5rem',
-          background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.7) 0%, rgba(22, 27, 34, 0.85) 100%)',
-          border: '1px solid rgba(99, 102, 241, 0.25)',
-        }}
-      >
-        <div>
-          <h1 style={{ fontSize: '1.6rem', marginBottom: '0.35rem' }}>
-            {language === 'en' ? '🇬🇧 Englisch lernen' : '🏛️ Latein lernen'}
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.92rem' }}>
-            Wähle deine Lektion aus dem Schulunterricht und trainiere mit Karteikarten, Tests oder Diktat.
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'center' }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'center' }}>
-              <BookOpen size={18} color="var(--primary-light)" />
-              <span>{totalInLanguage}</span>
-            </div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Gesamt</span>
-          </div>
-
-          <div style={{ width: '1px', height: '32px', background: 'var(--border-subtle)' }} />
-
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'center' }}>
-              <CheckCircle size={18} />
-              <span>{masteredInLanguage}</span>
-            </div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Gemeistert</span>
-          </div>
-
-          <div style={{ width: '1px', height: '32px', background: 'var(--border-subtle)' }} />
-
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'center' }}>
-              <Flame size={18} />
-              <span>{needPractice}</span>
-            </div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Üben</span>
-          </div>
-        </div>
-      </div>
-
       <div
         style={{
           display: 'flex',
