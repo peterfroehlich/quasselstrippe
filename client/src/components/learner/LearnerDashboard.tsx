@@ -66,24 +66,15 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
   };
 
   return (
-    <div style={{ maxWidth: '980px', margin: '0 auto', padding: '1.5rem 1rem 4rem 1rem' }}>
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '1rem',
-          marginBottom: '1.5rem',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: '1 1 280px' }}>
-          <Filter size={16} color="var(--text-muted)" />
+    <div style={{ maxWidth: '980px', margin: '0 auto', padding: '1.25rem 0.85rem calc(3rem + env(safe-area-inset-bottom, 0px)) 0.85rem' }}>
+      <div className="learner-filter-bar">
+        <div className="learner-filter-select-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: '1 1 280px' }}>
+          <Filter size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
           <select
             value={selectedLesson}
             onChange={(e) => setSelectedLesson(e.target.value)}
             className="input-field"
-            style={{ padding: '0.55rem 0.85rem', fontSize: '0.9rem' }}
+            style={{ padding: '0.55rem 0.85rem', fontSize: '0.9rem', width: '100%' }}
           >
             <option value="all">📚 Alle Lektionen ({totalInLanguage} Wörter)</option>
             {lessons.map(l => {
@@ -97,21 +88,23 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
           </select>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+        <div className="learner-filter-buttons-row">
           <button
             type="button"
             onClick={() => setFilterDifficulty(prev => prev === 'all' ? 'difficult' : 'all')}
             className={`btn btn-sm ${filterDifficulty === 'difficult' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ minHeight: '40px', padding: '0.5rem 0.85rem', whiteSpace: 'nowrap' }}
             title="Nur Vokabeln anzeigen, die noch im Kasten 1 oder 2 liegen"
           >
             <Flame size={15} color={filterDifficulty === 'difficult' ? '#fff' : 'var(--warning)'} />
-            <span>Nur Problemwörter ({needPractice})</span>
+            <span>Problemwörter ({needPractice})</span>
           </button>
 
           <button
             type="button"
             onClick={handleShuffle}
             className="btn btn-secondary btn-sm"
+            style={{ minHeight: '40px', padding: '0.5rem 0.85rem', whiteSpace: 'nowrap' }}
             title="Karten neu mischen"
           >
             <Shuffle size={15} />
@@ -120,26 +113,16 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          gap: '0.5rem',
-          borderBottom: '1px solid var(--border-subtle)',
-          paddingBottom: '0.75rem',
-          marginBottom: '2rem',
-          overflowX: 'auto',
-        }}
-      >
+      <div className="scrollable-tabs-bar">
         <button
           type="button"
           onClick={() => setActiveTab('flashcards')}
-          className="btn btn-sm"
+          className="learner-tab-btn"
           style={{
             background: activeTab === 'flashcards' ? 'var(--primary-gradient)' : 'var(--bg-surface-elevated)',
             color: activeTab === 'flashcards' ? '#fff' : 'var(--text-secondary)',
-            borderRadius: 'var(--radius-md)',
             border: activeTab === 'flashcards' ? 'none' : '1px solid var(--border-subtle)',
-            padding: '0.6rem 1.1rem',
+            boxShadow: activeTab === 'flashcards' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
           }}
         >
           <Layers size={16} />
@@ -149,45 +132,42 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('quiz')}
-          className="btn btn-sm"
+          className="learner-tab-btn"
           style={{
             background: activeTab === 'quiz' ? 'var(--primary-gradient)' : 'var(--bg-surface-elevated)',
             color: activeTab === 'quiz' ? '#fff' : 'var(--text-secondary)',
-            borderRadius: 'var(--radius-md)',
             border: activeTab === 'quiz' ? 'none' : '1px solid var(--border-subtle)',
-            padding: '0.6rem 1.1rem',
+            boxShadow: activeTab === 'quiz' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
           }}
         >
           <HelpCircle size={16} />
-          <span>Vokabeltest (Quiz)</span>
+          <span>Vokabeltest</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('spelling')}
-          className="btn btn-sm"
+          className="learner-tab-btn"
           style={{
             background: activeTab === 'spelling' ? 'var(--primary-gradient)' : 'var(--bg-surface-elevated)',
             color: activeTab === 'spelling' ? '#fff' : 'var(--text-secondary)',
-            borderRadius: 'var(--radius-md)',
             border: activeTab === 'spelling' ? 'none' : '1px solid var(--border-subtle)',
-            padding: '0.6rem 1.1rem',
+            boxShadow: activeTab === 'spelling' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
           }}
         >
           <PenTool size={16} />
-          <span>Schreib- & Hörtraining</span>
+          <span>Schreibtraining</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('match')}
-          className="btn btn-sm"
+          className="learner-tab-btn"
           style={{
             background: activeTab === 'match' ? 'var(--primary-gradient)' : 'var(--bg-surface-elevated)',
             color: activeTab === 'match' ? '#fff' : 'var(--text-secondary)',
-            borderRadius: 'var(--radius-md)',
             border: activeTab === 'match' ? 'none' : '1px solid var(--border-subtle)',
-            padding: '0.6rem 1.1rem',
+            boxShadow: activeTab === 'match' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
           }}
         >
           <Grid size={16} />

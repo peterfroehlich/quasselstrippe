@@ -55,69 +55,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [initialTab]);
 
   return (
-    <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '1.5rem 1rem 4rem 1rem' }}>
-      <div
-        style={{
-          display: 'flex',
-          gap: '0.75rem',
-          marginBottom: '2rem',
-          borderBottom: '1px solid var(--border-subtle)',
-          paddingBottom: '0.75rem',
-          flexWrap: 'wrap',
-        }}
-      >
+    <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '1.25rem 0.85rem calc(3rem + env(safe-area-inset-bottom, 0px)) 0.85rem' }}>
+      <div className="scrollable-tabs-bar">
         <button
           type="button"
           onClick={() => setActiveTab('scanner')}
-          className="btn btn-sm"
+          className="learner-tab-btn"
           style={{
             background: activeTab === 'scanner' ? 'var(--primary-gradient)' : 'var(--bg-surface-elevated)',
             color: activeTab === 'scanner' ? '#fff' : 'var(--text-secondary)',
-            borderRadius: 'var(--radius-md)',
             border: activeTab === 'scanner' ? 'none' : '1px solid var(--border-subtle)',
-            padding: '0.65rem 1.25rem',
-            fontSize: '0.95rem',
-            minHeight: '44px',
+            boxShadow: activeTab === 'scanner' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
+            minHeight: '42px',
           }}
         >
-          <Camera size={17} />
-          <span>📸 Arbeitsblatt-Scanner</span>
+          <Camera size={16} />
+          <span className="desktop-only">📸 Arbeitsblatt-Scanner</span>
+          <span className="mobile-only">📸 Scanner</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('words')}
-          className="btn btn-sm"
+          className="learner-tab-btn"
           style={{
             background: activeTab === 'words' ? 'var(--primary-gradient)' : 'var(--bg-surface-elevated)',
             color: activeTab === 'words' ? '#fff' : 'var(--text-secondary)',
-            borderRadius: 'var(--radius-md)',
             border: activeTab === 'words' ? 'none' : '1px solid var(--border-subtle)',
-            padding: '0.65rem 1.25rem',
-            fontSize: '0.95rem',
-            minHeight: '44px',
+            boxShadow: activeTab === 'words' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
+            minHeight: '42px',
           }}
         >
-          <List size={17} />
-          <span>📋 Vokabelliste & Verwaltung ({words.filter(w => w.language === language).length})</span>
+          <List size={16} />
+          <span className="desktop-only">📋 Vokabelliste & Verwaltung ({words.filter(w => w.language === language).length})</span>
+          <span className="mobile-only">📋 Vokabeln ({words.filter(w => w.language === language).length})</span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('profiles')}
-          className="btn btn-sm"
+          className="learner-tab-btn"
           style={{
             background: activeTab === 'profiles' ? 'var(--primary-gradient)' : 'var(--bg-surface-elevated)',
             color: activeTab === 'profiles' ? '#fff' : 'var(--text-secondary)',
-            borderRadius: 'var(--radius-md)',
             border: activeTab === 'profiles' ? 'none' : '1px solid var(--border-subtle)',
-            padding: '0.65rem 1.25rem',
-            fontSize: '0.95rem',
-            minHeight: '44px',
+            boxShadow: activeTab === 'profiles' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
+            minHeight: '42px',
           }}
         >
-          <Users size={17} />
-          <span>👥 Schüler & Profile ({profiles.length})</span>
+          <Users size={16} />
+          <span className="desktop-only">👥 Schüler & Profile ({profiles.length})</span>
+          <span className="mobile-only">👥 Profile ({profiles.length})</span>
         </button>
       </div>
 

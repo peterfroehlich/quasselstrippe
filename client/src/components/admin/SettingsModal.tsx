@@ -136,7 +136,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           maxWidth: '560px',
           maxHeight: '90vh',
           overflowY: 'auto',
-          padding: '2rem',
+          padding: 'clamp(1.1rem, 4vw, 2rem)',
           position: 'relative',
           background: 'var(--bg-surface)',
           border: '1px solid var(--border-medium)',
@@ -280,7 +280,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={onClose}

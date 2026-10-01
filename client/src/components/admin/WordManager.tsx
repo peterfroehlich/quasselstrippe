@@ -445,7 +445,7 @@ export const WordManager: React.FC<WordManagerProps> = ({
           marginBottom: '1.5rem',
         }}
       >
-        <div style={{ position: 'relative', flex: '1 1 300px', minWidth: '260px' }}>
+        <div style={{ position: 'relative', flex: '1 1 260px', width: '100%' }}>
           <Search
             size={17}
             color="var(--text-muted)"
@@ -473,15 +473,17 @@ export const WordManager: React.FC<WordManagerProps> = ({
             alignItems: 'center',
             gap: '0.6rem',
             flexWrap: 'wrap',
+            flex: '1 1 300px',
+            width: '100%',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 150px', minWidth: '0' }}>
             <Filter size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
             <select
               value={selectedLesson}
               onChange={(e) => setSelectedLesson(e.target.value)}
               className="input-field"
-              style={{ minWidth: '190px' }}
+              style={{ width: '100%' }}
             >
               <option value="all">Alle Lektionen ({languageWords.length})</option>
               {lessons.map(l => (
@@ -492,13 +494,13 @@ export const WordManager: React.FC<WordManagerProps> = ({
             </select>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 140px', minWidth: '0' }}>
             <User size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
             <select
               value={selectedProfileScope}
               onChange={(e) => setSelectedProfileScope(e.target.value)}
               className="input-field"
-              style={{ minWidth: '180px' }}
+              style={{ width: '100%' }}
               title="Nach Zuweisung filtern"
             >
               <option value="all">Alle Vokabeln</option>
@@ -540,7 +542,8 @@ export const WordManager: React.FC<WordManagerProps> = ({
         </div>
       </div>
 
-      <div className="glass-panel" style={{ overflow: 'hidden' }}>
+      {/* Desktop Table View (>= 768px) */}
+      <div className="word-manager-desktop-table glass-panel" style={{ overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.92rem' }}>
             <thead>
@@ -803,6 +806,222 @@ export const WordManager: React.FC<WordManagerProps> = ({
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Mobile Card List View (< 768px) */}
+      <div className="word-manager-mobile-list">
+        {filteredWords.length === 0 ? (
+          <div className="glass-panel" style={{ padding: '2.5rem 1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+            Keine Vokabeln für diesen Filter gefunden.
+          </div>
+        ) : (
+          filteredWords.map((item) => {
+            const isEditing = editingWordId === item.id;
+            const pos = PART_OF_SPEECH_LABELS[item.partOfSpeech] || PART_OF_SPEECH_LABELS.other;
+
+            if (isEditing) {
+              return (
+                <div
+                  key={item.id}
+                  className="glass-panel animate-scale-up"
+                  style={{
+                    padding: '1.1rem',
+                    border: '1px solid var(--primary)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.75rem',
+                    background: 'rgba(99, 102, 241, 0.08)',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--primary-light)' }}>
+                    Vokabel bearbeiten
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                      Fremdwort ({language === 'en' ? 'Englisch' : 'Latein'})
+                    </label>
+                    <input
+                      type="text"
+                      value={editFormData.word || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, word: e.target.value })}
+                      className="input-field"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                      Deutsche Bedeutung
+                    </label>
+                    <input
+                      type="text"
+                      value={editFormData.translation || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, translation: e.target.value })}
+                      className="input-field"
+                    />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                        Lektion
+                      </label>
+                      <input
+                        type="text"
+                        value={editFormData.lesson || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, lesson: e.target.value })}
+                        className="input-field"
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                        Wortart
+                      </label>
+                      <select
+                        value={editFormData.partOfSpeech || 'noun'}
+                        onChange={(e) => setEditFormData({ ...editFormData, partOfSpeech: e.target.value as PartOfSpeech })}
+                        className="input-field"
+                      >
+                        {Object.entries(PART_OF_SPEECH_LABELS).map(([k, v]) => (
+                          <option key={k} value={k}>{v.badge} - {v.de}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.4rem' }}>
+                    <button
+                      type="button"
+                      onClick={handleSaveEdit}
+                      className="btn btn-success"
+                      style={{ flex: 1, minHeight: '44px' }}
+                    >
+                      <Check size={16} />
+                      <span>Speichern</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingWordId(null)}
+                      className="btn btn-secondary"
+                      style={{ flex: 1, minHeight: '44px' }}
+                    >
+                      <X size={16} />
+                      <span>Abbrechen</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div
+                key={item.id}
+                className="glass-panel"
+                style={{
+                  padding: '0.9rem 1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem',
+                  background: 'var(--bg-surface-elevated)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                {/* Card Top: Word, Speaker, Badges */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+                    <AudioButton text={item.word} language={language} size="sm" />
+                    <div style={{ minWidth: 0 }}>
+                      <span style={{ fontWeight: 700, fontSize: '1.05rem', color: '#fff', wordBreak: 'break-word' }}>
+                        {item.word}
+                      </span>
+                      {item.phonetic && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginLeft: '0.35rem' }}>
+                          {item.phonetic}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexShrink: 0 }}>
+                    <span
+                      className="badge"
+                      style={{
+                        background: `${pos.color}20`,
+                        color: pos.color,
+                        fontSize: '0.7rem',
+                      }}
+                    >
+                      {pos.badge}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.2rem', background: 'rgba(255,255,255,0.06)', padding: '0.15rem 0.45rem', borderRadius: 'var(--radius-sm)' }}>
+                      <Layers size={11} color="var(--text-muted)" />
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: item.box >= 4 ? 'var(--success)' : item.box <= 2 ? 'var(--warning)' : '#fff' }}>
+                        K{item.box}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card Middle: Translation & Note */}
+                <div style={{ fontSize: '0.92rem', color: 'var(--text-primary)', wordBreak: 'break-word', paddingLeft: '2.4rem' }}>
+                  {item.translation}
+                  {item.notes && (
+                    <span style={{ display: 'block', fontSize: '0.78rem', color: 'var(--primary-light)', marginTop: '2px' }}>
+                      💡 {item.notes}
+                    </span>
+                  )}
+                </div>
+
+                {/* Card Bottom: Lesson & Actions */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.4rem', borderTop: '1px solid rgba(255,255,255,0.05)', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', minWidth: 0 }}>
+                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '170px' }}>
+                      📚 {item.lesson}
+                    </span>
+                    {item.profileId && (
+                      <span style={{ color: '#a5b4fc' }}>
+                        👤 {profiles.find(p => p.id === item.profileId)?.name || 'Individuell'}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleStartEdit(item)}
+                      className="btn btn-ghost btn-sm"
+                      style={{
+                        minWidth: '40px',
+                        minHeight: '40px',
+                        padding: 0,
+                        color: 'var(--text-secondary)',
+                      }}
+                      title="Bearbeiten"
+                      aria-label="Bearbeiten"
+                    >
+                      <Edit3 size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`Vokabel "${item.word}" wirklich löschen?`)) {
+                          onDeleteWord(item.id);
+                        }
+                      }}
+                      className="btn btn-ghost btn-sm"
+                      style={{
+                        minWidth: '40px',
+                        minHeight: '40px',
+                        padding: 0,
+                        color: 'var(--danger)',
+                      }}
+                      title="Löschen"
+                      aria-label="Löschen"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* Modal: Lektionen Übersicht & Verwaltung */}

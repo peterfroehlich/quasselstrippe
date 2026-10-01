@@ -199,13 +199,7 @@ export const MatchingView: React.FC<MatchingViewProps> = ({
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-          gap: '1rem',
-        }}
-      >
+      <div className="matching-grid">
         {cards.map(card => {
           const isMatched = matchedIds.has(card.wordId);
           const isSelected = card.id === selectedCardId;
@@ -243,14 +237,16 @@ export const MatchingView: React.FC<MatchingViewProps> = ({
                 borderRadius: 'var(--radius-md)',
                 color: textColor,
                 boxShadow: shadow,
-                minHeight: '100px',
-                padding: '1.25rem 1rem',
+                minHeight: '76px',
+                padding: '0.85rem 0.65rem',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 textAlign: 'center',
-                fontSize: card.type === 'word' ? '1.15rem' : '0.98rem',
+                fontSize: card.type === 'word' ? '1.05rem' : '0.92rem',
                 fontWeight: card.type === 'word' ? 700 : 500,
+                lineHeight: 1.3,
+                wordBreak: 'break-word',
                 cursor: isMatched ? 'default' : 'pointer',
                 transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
                 transform: isSelected ? 'scale(1.03)' : 'none',

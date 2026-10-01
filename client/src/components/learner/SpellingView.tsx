@@ -197,33 +197,34 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
       <div
         className="glass-panel"
         style={{
-          padding: '2.5rem 2rem',
+          padding: 'clamp(1.25rem, 4vw, 2.5rem)',
           textAlign: 'center',
-          marginBottom: '1.5rem',
+          marginBottom: '1.25rem',
         }}
       >
         <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
           Höre das Wort und tippe es auf {language === 'en' ? 'Englisch' : 'Latein'}
         </span>
 
-        <div style={{ margin: '1.25rem 0' }}>
+        <div style={{ margin: '1rem 0' }}>
           <button
             type="button"
             onClick={() => speechService.speak(currentWord.word, language)}
             className="speaker-btn is-speaking"
-            style={{ width: '64px', height: '64px', margin: '0 auto' }}
+            style={{ width: '58px', height: '58px', margin: '0 auto' }}
             title="Wort noch einmal anhören"
           >
-            <Volume2 size={30} />
+            <Volume2 size={26} />
           </button>
         </div>
 
         <div
           style={{
-            fontSize: '1.4rem',
+            fontSize: '1.35rem',
             fontWeight: 700,
             color: 'var(--primary-light)',
-            marginBottom: '0.5rem',
+            marginBottom: '0.4rem',
+            wordBreak: 'break-word',
           }}
         >
           🇩🇪 {currentWord.translation}
@@ -242,7 +243,7 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
               marginTop: '1rem',
               letterSpacing: '0.25em',
               fontFamily: 'monospace',
-              fontSize: '1.3rem',
+              fontSize: '1.25rem',
               color: 'var(--warning)',
               fontWeight: 700,
             }}
@@ -253,7 +254,7 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
       </div>
 
       <form onSubmit={handleSubmit}>
-        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+        <div className="spelling-form-row">
           <input
             ref={inputRef}
             type="text"

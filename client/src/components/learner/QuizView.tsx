@@ -187,19 +187,20 @@ export const QuizView: React.FC<QuizViewProps> = ({
       <div
         className="glass-panel"
         style={{
-          padding: '2.5rem 2rem',
+          padding: 'clamp(1.25rem, 4vw, 2.5rem)',
           textAlign: 'center',
-          marginBottom: '1.5rem',
+          marginBottom: '1.25rem',
           border: '1px solid var(--border-medium)',
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
           <h2
             style={{
-              fontSize: '2.4rem',
+              fontSize: 'clamp(1.6rem, 6vw, 2.4rem)',
               fontWeight: 800,
               color: '#ffffff',
               letterSpacing: '-0.02em',
+              wordBreak: 'break-word',
             }}
           >
             {currentWord.word}
@@ -213,28 +214,31 @@ export const QuizView: React.FC<QuizViewProps> = ({
           </p>
         )}
 
-        <p style={{ color: 'var(--primary-light)', fontSize: '0.9rem', marginTop: '1rem' }}>
+        <p style={{ color: 'var(--primary-light)', fontSize: '0.88rem', marginTop: '0.75rem' }}>
           Was bedeutet dieses Wort auf Deutsch?
         </p>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
         {options.map((option, idx) => {
           let btnStyle: React.CSSProperties = {
             width: '100%',
-            padding: '1.1rem 1.25rem',
+            padding: '0.9rem 1.15rem',
+            minHeight: '48px',
             textAlign: 'left',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: '0.75rem',
             background: 'var(--bg-surface-elevated)',
             border: '1px solid var(--border-subtle)',
             borderRadius: 'var(--radius-md)',
             color: 'var(--text-primary)',
-            fontSize: '1.05rem',
+            fontSize: '1rem',
             fontWeight: 500,
             cursor: isAnswered ? 'default' : 'pointer',
             transition: 'all 0.15s ease',
+            wordBreak: 'break-word',
           };
 
           const isCurrentCorrect = option === currentWord.translation;

@@ -459,7 +459,7 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
               transform: isInverted ? 'rotate(180deg)' : 'none',
             }}
           />
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+          <span className="desktop-only" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
             {isInverted ? (
               <>
                 <span>🇩🇪 Deutsch</span>
@@ -471,6 +471,21 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
                 <span>{language === 'en' ? '🇬🇧 Englisch' : '🏛️ Latein'}</span>
                 <span style={{ color: 'var(--primary-light)', fontWeight: 700 }}>→</span>
                 <span>🇩🇪 Deutsch</span>
+              </>
+            )}
+          </span>
+          <span className="mobile-only" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.8rem' }}>
+            {isInverted ? (
+              <>
+                <span>🇩🇪</span>
+                <span style={{ color: 'var(--primary-light)', fontWeight: 700 }}>→</span>
+                <span>{language === 'en' ? '🇬🇧' : '🏛️'}</span>
+              </>
+            ) : (
+              <>
+                <span>{language === 'en' ? '🇬🇧' : '🏛️'}</span>
+                <span style={{ color: 'var(--primary-light)', fontWeight: 700 }}>→</span>
+                <span>🇩🇪</span>
               </>
             )}
           </span>
@@ -569,12 +584,13 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
               <div
                 style={{
                   fontFamily: 'var(--font-display)',
-                  fontSize: '2.5rem',
+                  fontSize: 'clamp(1.75rem, 6vw, 2.5rem)',
                   fontWeight: 800,
                   color: '#ffffff',
                   marginBottom: '0.5rem',
                   letterSpacing: '-0.02em',
                   lineHeight: 1.25,
+                  wordBreak: 'break-word',
                 }}
               >
                 {isInverted ? currentWord.translation : currentWord.word}
@@ -687,11 +703,12 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
               <div
                 style={{
                   fontFamily: 'var(--font-display)',
-                  fontSize: isInverted ? '2.4rem' : '2.1rem',
+                  fontSize: isInverted ? 'clamp(1.75rem, 6vw, 2.4rem)' : 'clamp(1.6rem, 5.5vw, 2.1rem)',
                   fontWeight: 800,
                   color: '#ffffff',
                   marginBottom: '0.5rem',
                   lineHeight: 1.25,
+                  wordBreak: 'break-word',
                 }}
               >
                 {isInverted ? cardBackData.word : cardBackData.translation}

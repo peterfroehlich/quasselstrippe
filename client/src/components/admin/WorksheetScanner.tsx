@@ -260,8 +260,8 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: imagePreview ? '1fr 1fr' : '1fr',
-            gap: '1.5rem',
+            gridTemplateColumns: imagePreview ? 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))' : '1fr',
+            gap: '1.25rem',
             marginBottom: '2rem',
           }}
         >
@@ -522,7 +522,7 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
             </h3>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))', gap: '1rem' }}>
             {availableSamples.map(sample => (
               <div
                 key={sample.id}

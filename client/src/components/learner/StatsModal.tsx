@@ -150,7 +150,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
           maxWidth: '780px',
           maxHeight: '92vh',
           overflowY: 'auto',
-          padding: '1.75rem',
+          padding: 'clamp(1rem, 3.5vw, 1.75rem)',
           position: 'relative',
           background: 'var(--bg-surface)',
           border: '1px solid var(--border-medium)',
@@ -309,8 +309,8 @@ export const StatsModal: React.FC<StatsModalProps> = ({
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-                gap: '0.85rem',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 135px), 1fr))',
+                gap: '0.75rem',
               }}
             >
               {/* Card 1: Mastered Words */}
@@ -484,8 +484,8 @@ export const StatsModal: React.FC<StatsModalProps> = ({
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-                  gap: '0.6rem',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 105px), 1fr))',
+                  gap: '0.5rem',
                 }}
               >
                 {BOX_CONFIG.map(({ box, label, desc, color, bg }) => {
