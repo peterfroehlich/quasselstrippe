@@ -1354,7 +1354,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary-light)', fontWeight: 700, fontSize: '0.95rem' }}>
               <Sparkles size={16} />
-              <span>Gemini Lehrer-Feedback:</span>
+              <span>Gemini Lehrer-Feedback{gradeResult.model ? ` (${gradeResult.model})` : ''}:</span>
             </div>
 
             <p style={{ color: 'var(--text-primary)', fontSize: '0.95rem', margin: 0, lineHeight: 1.5 }}>

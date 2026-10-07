@@ -511,6 +511,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
         schoolGrade,
         feedback,
         capitalizationError,
+        model,
       };
     } catch (err: unknown) {
       console.warn(`Model ${model} failed, trying fallback if available`, err);

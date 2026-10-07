@@ -160,5 +160,6 @@ export interface HandwritingGradeResponse {
   schoolGrade: string;
   feedback: string;
   capitalizationError?: boolean;
+  model?: string;
 }
 

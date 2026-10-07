@@ -327,6 +327,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
           schoolGrade,
           feedback,
           capitalizationError,
+          model,
         };
         break;
       } catch (err) {
