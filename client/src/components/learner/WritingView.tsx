@@ -105,6 +105,47 @@ export const WritingView: React.FC<WritingViewProps> = ({
     resetCardState();
   }, [wordsIdFingerprint]);
 
+  // Setup canvas resolution (Retina display support)
+  const initCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const targetWidth = Math.floor(rect.width * dpr);
+    const targetHeight = Math.floor(rect.height * dpr);
+
+    // Save existing drawing strokes if already drawn and dimensions change
+    let existingContent: ImageData | null = null;
+    const ctx = canvas.getContext('2d');
+    if (ctx && canvas.width > 0 && canvas.height > 0 && (canvas.width !== targetWidth || canvas.height !== targetHeight)) {
+      try {
+        existingContent = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      } catch {}
+    }
+
+    if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+    }
+
+    if (ctx) {
+      // Reset transform matrix first to avoid cumulative scaling (e.g. 2x -> 4x -> 8x on resize/re-init)
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      if (existingContent) {
+        try {
+          ctx.putImageData(existingContent, 0, 0);
+        } catch {}
+      }
+    }
+  }, []);
+
   const resetCardState = useCallback(() => {
     setIsSubmitted(false);
     setGradeResult(null);
@@ -127,7 +168,11 @@ export const WritingView: React.FC<WritingViewProps> = ({
         ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
     }
-  }, []);
+
+    requestAnimationFrame(() => {
+      initCanvas();
+    });
+  }, [initCanvas]);
 
   // Speak word when current word loads (and keep it hidden!)
   const playWordAudio = useCallback((wordToSpeak?: string) => {
@@ -151,35 +196,35 @@ export const WritingView: React.FC<WritingViewProps> = ({
     }
   }, [currentIndex, currentWord?.id, isFinished, isSubmitted, playWordAudio, resetCardState]);
 
-  // Setup canvas resolution (Retina display support)
-  const initCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-
-    // Set internal resolution
-    canvas.width = Math.floor(rect.width * dpr);
-    canvas.height = Math.floor(rect.height * dpr);
-
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.scale(dpr, dpr);
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-    }
-  }, []);
-
   useEffect(() => {
-    initCanvas();
+    if (!isSubmitted) {
+      // Allow DOM to settle and initialize canvas dimensions immediately after mount
+      requestAnimationFrame(() => {
+        initCanvas();
+      });
+    }
+
+    const canvas = canvasRef.current;
+    let ro: ResizeObserver | null = null;
+    if (canvas && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => {
+        initCanvas();
+      });
+      ro.observe(canvas);
+    }
+
     const handleResize = () => {
-      // Note: resizing re-inits scale; keep existing strokes if possible
       initCanvas();
     };
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [initCanvas]);
+    window.addEventListener('orientationchange', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+      if (ro) ro.disconnect();
+    };
+  }, [initCanvas, isSubmitted]);
 
   // Check if pointer is likely a resting palm/hand rather than deliberate drawing
   const isLikelyPalmTouch = (e: React.PointerEvent<HTMLCanvasElement>): boolean => {
@@ -315,6 +360,13 @@ export const WritingView: React.FC<WritingViewProps> = ({
     if (isSubmitted || isGrading) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    // Failsafe calibration: ensure canvas buffer matches physical display geometry
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.floor(rect.width * dpr) || canvas.height !== Math.floor(rect.height * dpr)) {
+      initCanvas();
+    }
 
     const isPen = e.pointerType === 'pen';
 
@@ -618,6 +670,9 @@ export const WritingView: React.FC<WritingViewProps> = ({
     if (currentIndex + 1 < sessionWords.length) {
       setCurrentIndex(prev => prev + 1);
       resetCardState();
+      requestAnimationFrame(() => {
+        initCanvas();
+      });
     } else {
       setIsFinished(true);
       confetti({ particleCount: 120, spread: 80, origin: { y: 0.55 } });
