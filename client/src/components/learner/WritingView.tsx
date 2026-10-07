@@ -997,7 +997,8 @@ export const WritingView: React.FC<WritingViewProps> = ({
               <AudioButton
                 text={currentWord.word}
                 language={language}
-                size="sm"
+                size="md"
+                iconSize={22}
                 title="Wort anhören 🔊"
               />
             )}

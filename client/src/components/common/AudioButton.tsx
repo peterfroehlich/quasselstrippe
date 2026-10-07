@@ -7,6 +7,7 @@ interface AudioButtonProps {
   text: string;
   language: Language;
   size?: 'sm' | 'md' | 'lg';
+  iconSize?: number;
   variant?: 'circle' | 'pill';
   label?: string;
   className?: string;
@@ -19,6 +20,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({
   text,
   language,
   size = 'md',
+  iconSize,
   variant = 'circle',
   label,
   className = '',
@@ -50,16 +52,18 @@ export const AudioButton: React.FC<AudioButtonProps> = ({
     });
   };
 
-  const iconSizes = {
-    sm: 15,
-    md: 19,
-    lg: 24,
+  const defaultIconSizes = {
+    sm: 18,
+    md: 22,
+    lg: 26,
   };
 
+  const resolvedIconSize = iconSize ?? defaultIconSizes[size];
+
   const icon = hasError ? (
-    <VolumeX size={iconSizes[size]} color="#ef4444" />
+    <VolumeX size={resolvedIconSize} color="#ef4444" />
   ) : (
-    <Volume2 size={iconSizes[size]} />
+    <Volume2 size={resolvedIconSize} />
   );
 
   if (variant === 'pill') {
