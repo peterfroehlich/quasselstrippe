@@ -550,6 +550,28 @@ export const WritingView: React.FC<WritingViewProps> = ({
         apiKey,
       });
 
+      // Extra client-side validation for wrong initial capitalization
+      const expLetter = currentWord.word.trim().match(/^\p{L}/u)?.[0];
+      const recLetter = (result.recognizedWord || '').trim().match(/^\p{L}/u)?.[0];
+      if (expLetter && recLetter) {
+        const isExpUpper = expLetter === expLetter.toUpperCase() && expLetter !== expLetter.toLowerCase();
+        const isRecUpper = recLetter === recLetter.toUpperCase() && recLetter !== recLetter.toLowerCase();
+        if (isExpUpper !== isRecUpper) {
+          result.capitalizationError = true;
+          result.isCorrect = false;
+          result.score = Math.min(result.score, 70);
+          if (result.schoolGrade.startsWith('1') || result.schoolGrade.startsWith('2')) {
+            result.schoolGrade = '3 (Befriedigend)';
+          }
+          const notice = isExpUpper
+            ? `Achte auf den Wortanfang: "${currentWord.word}" beginnt mit einem Großbuchstaben ("${expLetter}").`
+            : `Achte auf den Wortanfang: "${currentWord.word}" beginnt mit einem Kleinbuchstaben ("${expLetter}").`;
+          if (!result.feedback.toLowerCase().includes('groß') && !result.feedback.toLowerCase().includes('klein')) {
+            result.feedback = `${result.feedback} ${notice}`.trim();
+          }
+        }
+      }
+
       setGradeResult(result);
       setIsSubmitted(true);
 
@@ -1103,6 +1125,25 @@ export const WritingView: React.FC<WritingViewProps> = ({
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                   Gemini KI-Bewertung: <strong>{gradeResult.schoolGrade}</strong> ({gradeResult.score}%)
                 </div>
+                {gradeResult.capitalizationError && (
+                  <div 
+                    style={{
+                      marginTop: '0.4rem',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      background: 'rgba(245, 158, 11, 0.15)',
+                      border: '1px solid rgba(245, 158, 11, 0.35)',
+                      color: '#fbbf24',
+                      padding: '0.2rem 0.6rem',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.8rem',
+                      fontWeight: 700,
+                    }}
+                  >
+                    <span>⚠️ Falscher Anfangsbuchstabe (Groß-/Kleinschreibung)</span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1204,6 +1245,11 @@ export const WritingView: React.FC<WritingViewProps> = ({
 
             <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
               Aus deiner Handschrift erkannt: <strong style={{ color: '#ffffff' }}>"{gradeResult.recognizedWord}"</strong>
+              {gradeResult.capitalizationError && (
+                <span style={{ color: '#fbbf24', marginLeft: '0.5rem', fontWeight: 600 }}>
+                  (Wortanfang beachten: "{currentWord?.word}")
+                </span>
+              )}
             </div>
 
             {/* Student's Handwriting Thumbnail Preview */}

@@ -159,5 +159,6 @@ export interface HandwritingGradeResponse {
   score: number;
   schoolGrade: string;
   feedback: string;
+  capitalizationError?: boolean;
 }
 

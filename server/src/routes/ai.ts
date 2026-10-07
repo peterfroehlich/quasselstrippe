@@ -180,14 +180,19 @@ Zielwort: "${expectedWord}"
 Zielsprache: ${targetLangName}
 
 Aufgaben:
-1. Erkenne das geschriebene Wort auf dem Bild (OCR).
-2. Vergleiche mit "${expectedWord}" (Rechtschreibung genau prüfen, Groß-/Kleinschreibung tolerant).
+1. Erkenne das geschriebene Wort auf dem Bild (OCR) exakt so, wie es dasteht (inklusive Groß-/Kleinschreibung des ersten Buchstabens).
+2. Vergleiche mit dem Zielwort "${expectedWord}":
+- Prüfe die Rechtschreibung aller Buchstaben.
+- WICHTIG: Achte zwingend auf die Groß-/Kleinschreibung des Anfangsbuchstabens!
+  - Stimmt die Groß-/Kleinschreibung des ersten Buchstabens nicht mit "${expectedWord}" überein (z.B. klein statt groß oder groß statt klein geschrieben), werte dies als Fehler ("isCorrect": false, "score": maximal 70, "capitalizationError": true).
+  - Weise im Feedback explizit auf den falschen Anfangsbuchstaben hin (z.B. 'Achte auf die Großschreibung am Wortanfang' bzw. 'Dieses Wort wird am Anfang kleingeschrieben').
 3. Bewerte:
-- "recognizedWord": Was hat der Schüler geschrieben? (oder "(nichts lesbar)")
-- "isCorrect": true wenn richtig geschrieben, sonst false.
-- "score": 0 bis 100 (100 = perfekt, 85-95 = sehr gut, 50-70 = fast richtig aber Rechtschreibfehler, 0-30 = falsch oder unleserlich).
+- "recognizedWord": Was hat der Schüler geschrieben? (exakte Groß-/Kleinschreibung beibehalten)
+- "isCorrect": true wenn richtig geschrieben UND Anfangsbuchstabe korrekt groß/kleingeschrieben, sonst false.
+- "score": 0 bis 100 (100 = perfekt, 85-95 = sehr gut, 65-75 = richtige Buchstaben aber falsche Groß-/Kleinschreibung am Anfang, 0-40 = falsch oder unleserlich).
 - "schoolGrade": Deutsche Schulnote (z.B. "1 (Sehr gut)", "2 (Gut)", "3 (Befriedigend)", "4 (Ausreichend)", "5 (Mangelhaft)", "6 (Ungenügend)").
-- "feedback": Maximal 1 sehr kurzer, freundlicher Satz auf Deutsch (z.B. "Klasse gemacht!" oder "Achte auf das 'e' am Ende.").
+- "feedback": Maximal 1 bis 2 kurze, motivierende Sätze auf Deutsch. Erkläre bei Fehlern genau, was falsch ist.
+- "capitalizationError": true, falls der Anfangsbuchstabe die falsche Groß-/Kleinschreibung hat, sonst false.
 
 Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke außerhalb des JSON:
 {
@@ -195,7 +200,8 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
   "isCorrect": true,
   "score": 100,
   "schoolGrade": "1 (Sehr gut)",
-  "feedback": "Klasse gemacht! Fehlerfrei geschrieben."
+  "feedback": "Klasse gemacht! Fehlerfrei geschrieben.",
+  "capitalizationError": false
 }`;
 
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
@@ -282,12 +288,47 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
           throw new Error('Gemini-Antwort konnte nicht als JSON interpretiert werden.');
         }
 
+        // Deterministic validation of initial letter capitalization
+        const expLetter = expectedWord.trim().match(/^\p{L}/u)?.[0];
+        const recLetter = (parsed.recognizedWord || '').trim().match(/^\p{L}/u)?.[0];
+        let hasCapitalizationMismatch = false;
+        let capNotice = '';
+
+        if (expLetter && recLetter) {
+          const isExpUpper = expLetter === expLetter.toUpperCase() && expLetter !== expLetter.toLowerCase();
+          const isRecUpper = recLetter === recLetter.toUpperCase() && recLetter !== recLetter.toLowerCase();
+          if (isExpUpper !== isRecUpper) {
+            hasCapitalizationMismatch = true;
+            capNotice = isExpUpper
+              ? `Achte auf den Wortanfang: "${expectedWord}" beginnt mit einem Großbuchstaben ("${expLetter}").`
+              : `Achte auf den Wortanfang: "${expectedWord}" beginnt mit einem Kleinbuchstaben ("${expLetter}").`;
+          }
+        }
+
+        const capitalizationError = Boolean(parsed.capitalizationError || hasCapitalizationMismatch);
+        let isCorrect = Boolean(parsed.isCorrect);
+        let score = typeof parsed.score === 'number' ? parsed.score : isCorrect ? 100 : 40;
+        let schoolGrade = parsed.schoolGrade || (isCorrect ? '1 (Sehr gut)' : '5 (Mangelhaft)');
+        let feedback = parsed.feedback || (isCorrect ? 'Super gemacht!' : 'Übe dieses Wort noch einmal.');
+
+        if (capitalizationError) {
+          isCorrect = false;
+          score = Math.min(score, 70);
+          if (schoolGrade.startsWith('1') || schoolGrade.startsWith('2')) {
+            schoolGrade = '3 (Befriedigend)';
+          }
+          if (capNotice && !feedback.toLowerCase().includes('groß') && !feedback.toLowerCase().includes('klein')) {
+            feedback = `${feedback} ${capNotice}`.trim();
+          }
+        }
+
         resultData = {
           recognizedWord: parsed.recognizedWord || '(unbekannt)',
-          isCorrect: Boolean(parsed.isCorrect),
-          score: typeof parsed.score === 'number' ? parsed.score : parsed.isCorrect ? 100 : 40,
-          schoolGrade: parsed.schoolGrade || (parsed.isCorrect ? '1 (Sehr gut)' : '5 (Mangelhaft)'),
-          feedback: parsed.feedback || (parsed.isCorrect ? 'Super gemacht!' : 'Übe dieses Wort noch einmal.'),
+          isCorrect,
+          score,
+          schoolGrade,
+          feedback,
+          capitalizationError,
         };
         break;
       } catch (err) {
