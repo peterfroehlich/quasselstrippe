@@ -1,0 +1,1033 @@
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { 
+  Volume2, 
+  RotateCcw, 
+  Award, 
+  ArrowRight, 
+  Eraser, 
+  Pencil, 
+  Trash2, 
+  Undo2, 
+  Sparkles, 
+  CheckCircle2, 
+  XCircle, 
+  ChevronRight,
+  BookOpen,
+  VolumeX,
+  Loader2
+} from 'lucide-react';
+import confetti from 'canvas-confetti';
+import type { WordItem, Language, HandwritingGradeResponse } from '../../types/vocabulary';
+import { speechService } from '../../services/speech';
+import { gradeHandwriting } from '../../services/gemini';
+
+interface WritingViewProps {
+  words: WordItem[];
+  allWords: WordItem[];
+  language: Language;
+  onRecordReview: (wordId: string, wasCorrect: boolean) => void;
+  onRestart: () => void;
+  apiKey?: string;
+  selectedLesson?: string;
+  availableLessons?: string[];
+  onSelectLesson?: (lesson: string) => void;
+}
+
+export const WritingView: React.FC<WritingViewProps> = ({
+  words,
+  language,
+  onRecordReview,
+  onRestart,
+  apiKey,
+  selectedLesson = 'all',
+  availableLessons = [],
+  onSelectLesson,
+}) => {
+  const [sessionWords, setSessionWords] = useState<WordItem[]>(() => [...words]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  
+  // UI tool: 'pen' | 'eraser'
+  const [activeTool, setActiveTool] = useState<'pen' | 'eraser'>('pen');
+  const [isReverseTipDetected, setIsReverseTipDetected] = useState(false);
+  const [hasDrawn, setHasDrawn] = useState(false);
+  
+  // Audio state
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speechError, setSpeechError] = useState(false);
+
+  // Grading & result state
+  const [isGrading, setIsGrading] = useState(false);
+  const [gradeResult, setGradeResult] = useState<HandwritingGradeResponse | null>(null);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [userHandwritingSnapshot, setUserHandwritingSnapshot] = useState<string | null>(null);
+  const [gradingError, setGradingError] = useState<string | null>(null);
+
+  // Overall session metrics
+  const [score, setScore] = useState(0);
+  const [isFinished, setIsFinished] = useState(false);
+
+  // Canvas refs
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDrawingRef = useRef(false);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const historyRef = useRef<ImageData[]>([]);
+  const activeToolRef = useRef<'pen' | 'eraser'>('pen');
+  activeToolRef.current = activeTool;
+
+  const currentWord = sessionWords[currentIndex];
+
+  // Sync words on external change
+  const wordsIdFingerprint = useMemo(() => {
+    return words.map(w => w.id).sort().join(',');
+  }, [words]);
+
+  useEffect(() => {
+    setSessionWords([...words]);
+    setCurrentIndex(0);
+    setScore(0);
+    setIsFinished(false);
+    resetCardState();
+  }, [wordsIdFingerprint]);
+
+  const resetCardState = useCallback(() => {
+    setIsSubmitted(false);
+    setGradeResult(null);
+    setGradingError(null);
+    setUserHandwritingSnapshot(null);
+    setHasDrawn(false);
+    setActiveTool('pen');
+    setIsReverseTipDetected(false);
+    historyRef.current = [];
+
+    // Clear canvas
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+  }, []);
+
+  // Speak word when current word loads (and keep it hidden!)
+  const playWordAudio = useCallback((wordToSpeak?: string) => {
+    const text = wordToSpeak || currentWord?.word;
+    if (!text) return;
+    setIsSpeaking(true);
+    setSpeechError(false);
+    speechService.speak(text, language, {
+      onEnd: () => setIsSpeaking(false),
+      onError: () => {
+        setIsSpeaking(false);
+        setSpeechError(true);
+      }
+    });
+  }, [currentWord?.word, language]);
+
+  useEffect(() => {
+    if (currentWord && !isFinished && !isSubmitted) {
+      resetCardState();
+      playWordAudio(currentWord.word);
+    }
+  }, [currentIndex, currentWord?.id, isFinished, isSubmitted, playWordAudio, resetCardState]);
+
+  // Setup canvas resolution (Retina display support)
+  const initCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+
+    // Set internal resolution
+    canvas.width = Math.floor(rect.width * dpr);
+    canvas.height = Math.floor(rect.height * dpr);
+
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.scale(dpr, dpr);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+    }
+  }, []);
+
+  useEffect(() => {
+    initCanvas();
+    const handleResize = () => {
+      // Note: resizing re-inits scale; keep existing strokes if possible
+      initCanvas();
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [initCanvas]);
+
+  // Helper to determine if pointer is currently eraser (reverse tip or UI tool)
+  const checkIsEraser = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Reverse tip on Apple Pencil / stylus or eraser button
+    const isHardwareEraser = 
+      (e.buttons & 32) === 32 || 
+      e.button === 5 || 
+      (e.nativeEvent as any).pointerType === 'eraser';
+
+    if (isHardwareEraser !== isReverseTipDetected) {
+      setIsReverseTipDetected(isHardwareEraser);
+    }
+
+    return activeToolRef.current === 'eraser' || isHardwareEraser;
+  };
+
+  const getCanvasCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
+  };
+
+  // Save state for Undo
+  const saveUndoSnapshot = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    try {
+      const snap = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      historyRef.current.push(snap);
+      if (historyRef.current.length > 20) {
+        historyRef.current.shift();
+      }
+    } catch {}
+  };
+
+  const handleUndo = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    if (historyRef.current.length > 0) {
+      const lastSnap = historyRef.current.pop();
+      if (lastSnap) {
+        ctx.putImageData(lastSnap, 0, 0);
+      }
+      if (historyRef.current.length === 0) {
+        setHasDrawn(false);
+      }
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      setHasDrawn(false);
+    }
+  };
+
+  const handleClear = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    saveUndoSnapshot();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setHasDrawn(false);
+  };
+
+  // Pointer event handlers
+  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (isSubmitted || isGrading) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    try {
+      canvas.setPointerCapture(e.pointerId);
+    } catch {}
+
+    saveUndoSnapshot();
+
+    isDrawingRef.current = true;
+    const coords = getCanvasCoords(e);
+    lastPointRef.current = coords;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const isErasing = checkIsEraser(e);
+    if (isErasing) {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth = 32;
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = '#0f172a'; // Deep crisp ink
+      const pressure = e.pressure && e.pressure > 0 ? e.pressure : 0.5;
+      ctx.lineWidth = Math.max(2, 2.5 + pressure * 3.5);
+    }
+
+    ctx.beginPath();
+    ctx.arc(coords.x, coords.y, ctx.lineWidth / 2, 0, Math.PI * 2);
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.fill();
+
+    setHasDrawn(true);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawingRef.current || !lastPointRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const isErasing = checkIsEraser(e);
+    if (isErasing) {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.lineWidth = 32;
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = '#0f172a';
+      const pressure = e.pressure && e.pressure > 0 ? e.pressure : 0.5;
+      ctx.lineWidth = Math.max(2, 2.5 + pressure * 3.5);
+    }
+
+    const currentCoords = getCanvasCoords(e);
+    const midPoint = {
+      x: (lastPointRef.current.x + currentCoords.x) / 2,
+      y: (lastPointRef.current.y + currentCoords.y) / 2,
+    };
+
+    ctx.beginPath();
+    ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+    ctx.quadraticCurveTo(lastPointRef.current.x, lastPointRef.current.y, midPoint.x, midPoint.y);
+    ctx.stroke();
+
+    lastPointRef.current = currentCoords;
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    isDrawingRef.current = false;
+    lastPointRef.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {}
+    setIsReverseTipDetected(false);
+  };
+
+  // Convert canvas to white-background JPEG base64
+  const exportCanvasBase64 = (): string => {
+    const canvas = canvasRef.current;
+    if (!canvas) return '';
+
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = canvas.width;
+    exportCanvas.height = canvas.height;
+    const ctx = exportCanvas.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+      ctx.drawImage(canvas, 0, 0);
+    }
+    return exportCanvas.toDataURL('image/jpeg', 0.92);
+  };
+
+  // Student acknowledges and submits writing for grading
+  const handleAcknowledgeAndGrade = async () => {
+    if (!currentWord || isGrading || isSubmitted) return;
+
+    if (!hasDrawn) {
+      alert('Bitte schreibe zuerst das Wort mit deinem Apple Pencil in das Schreibfeld!');
+      return;
+    }
+
+    setIsGrading(true);
+    setGradingError(null);
+
+    const base64Data = exportCanvasBase64();
+    setUserHandwritingSnapshot(base64Data);
+
+    try {
+      const result = await gradeHandwriting({
+        base64Data,
+        expectedWord: currentWord.word,
+        language,
+        apiKey,
+      });
+
+      setGradeResult(result);
+      setIsSubmitted(true);
+
+      if (result.isCorrect) {
+        setScore(prev => prev + 1);
+        confetti({ particleCount: 70, spread: 65, origin: { y: 0.6 } });
+      }
+
+      // Record Leitner review
+      onRecordReview(currentWord.id, result.isCorrect);
+    } catch (err: any) {
+      console.error('Grading error', err);
+      setGradingError(err?.message || 'Fehler beim Korrigieren durch Gemini.');
+    } finally {
+      setIsGrading(false);
+    }
+  };
+
+  // Fallback self-grading if Gemini is offline/unconfigured
+  const handleManualGrading = (isCorrect: boolean) => {
+    if (!currentWord) return;
+    const fallbackResult: HandwritingGradeResponse = {
+      recognizedWord: isCorrect ? currentWord.word : '(manuell gewertet)',
+      isCorrect,
+      score: isCorrect ? 100 : 50,
+      schoolGrade: isCorrect ? '1 (Sehr gut)' : '4 (Ausreichend)',
+      feedback: isCorrect 
+        ? 'Manuell als richtig bestätigt!' 
+        : `Das Wort heißt: "${currentWord.word}". Präge es dir gut ein!`,
+    };
+    setGradeResult(fallbackResult);
+    setIsSubmitted(true);
+    setGradingError(null);
+
+    if (isCorrect) {
+      setScore(prev => prev + 1);
+      confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
+    }
+    onRecordReview(currentWord.id, isCorrect);
+  };
+
+  // Next word
+  const handleNextWord = () => {
+    if (currentIndex + 1 < sessionWords.length) {
+      setCurrentIndex(prev => prev + 1);
+      resetCardState();
+    } else {
+      setIsFinished(true);
+      confetti({ particleCount: 120, spread: 80, origin: { y: 0.55 } });
+    }
+  };
+
+  // Keyboard shortcut: Press Enter to proceed when result is displayed
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && isSubmitted && !isGrading) {
+        e.preventDefault();
+        handleNextWord();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSubmitted, isGrading, currentIndex, sessionWords.length]);
+
+  if (!sessionWords || sessionWords.length === 0) {
+    return (
+      <div className="glass-panel" style={{ padding: '3.5rem 2rem', textAlign: 'center' }}>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+          Keine Vokabeln für den Schreibmodus gefunden.
+        </p>
+        <button type="button" onClick={onRestart} className="btn btn-secondary">
+          Neu starten
+        </button>
+      </div>
+    );
+  }
+
+  // End of session / lesson completion screen
+  if (isFinished) {
+    const percentage = Math.round((score / sessionWords.length) * 100);
+    const nextLessonIndex = availableLessons.findIndex(l => l === selectedLesson) + 1;
+    const hasNextLesson = nextLessonIndex > 0 && nextLessonIndex < availableLessons.length;
+    const nextLesson = hasNextLesson ? availableLessons[nextLessonIndex] : null;
+
+    return (
+      <div className="glass-panel" style={{ padding: '3rem 2rem', textAlign: 'center', maxWidth: '640px', margin: '0 auto' }}>
+        <div 
+          style={{ 
+            width: '84px', 
+            height: '84px', 
+            borderRadius: '50%', 
+            background: 'var(--primary-gradient)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center', 
+            margin: '0 auto 1.5rem',
+            boxShadow: '0 8px 24px rgba(99, 102, 241, 0.4)'
+          }}
+        >
+          <Award size={44} color="#ffffff" />
+        </div>
+
+        <h2 style={{ fontSize: '1.9rem', marginBottom: '0.5rem' }}>Schreibtraining abgeschlossen!</h2>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '1.05rem', marginBottom: '2rem' }}>
+          {selectedLesson !== 'all' ? `Lektion: ${selectedLesson}` : 'Alle Lektionen geübt'}
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '2.5rem' }}>
+          <div style={{ background: 'var(--bg-surface-elevated)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: '2.2rem', fontWeight: 800, color: 'var(--primary-light)' }}>
+              {score} / {sessionWords.length}
+            </div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+              Richtig geschrieben
+            </div>
+          </div>
+          <div style={{ background: 'var(--bg-surface-elevated)', padding: '1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: '2.2rem', fontWeight: 800, color: percentage >= 75 ? 'var(--success)' : 'var(--warning)' }}>
+              {percentage}%
+            </div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+              Erfolgsquote
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {hasNextLesson && nextLesson && onSelectLesson && (
+            <button
+              type="button"
+              onClick={() => onSelectLesson(nextLesson)}
+              className="btn btn-primary"
+              style={{ width: '100%', padding: '0.9rem', fontSize: '1.05rem' }}
+            >
+              <span>Nächste Lektion starten: {nextLesson}</span>
+              <ChevronRight size={18} />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              setCurrentIndex(0);
+              setScore(0);
+              setIsFinished(false);
+              resetCardState();
+            }}
+            className="btn btn-secondary"
+            style={{ width: '100%', padding: '0.85rem' }}
+          >
+            <RotateCcw size={16} />
+            <span>Diese Lektion wiederholen</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', maxWidth: '820px', margin: '0 auto' }}>
+      {/* Top Header & Progress */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+          <span 
+            style={{ 
+              fontSize: '0.82rem', 
+              fontWeight: 700, 
+              padding: '0.3rem 0.75rem', 
+              borderRadius: 'var(--radius-full)', 
+              background: 'rgba(99, 102, 241, 0.15)',
+              color: 'var(--primary-light)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem'
+            }}
+          >
+            <BookOpen size={13} />
+            {currentWord?.lesson || 'Lektion'}
+          </span>
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            Wort {currentIndex + 1} von {sessionWords.length}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+            Richtig: <strong style={{ color: 'var(--success)' }}>{score}</strong>
+          </span>
+          <button
+            type="button"
+            onClick={onRestart}
+            className="btn btn-secondary btn-sm"
+            style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }}
+            title="Neu starten"
+          >
+            <RotateCcw size={13} />
+            <span>Neu</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div style={{ width: '100%', height: '5px', background: 'var(--bg-surface-elevated)', borderRadius: '999px', overflow: 'hidden' }}>
+        <div 
+          style={{ 
+            height: '100%', 
+            width: `${((currentIndex + (isSubmitted ? 1 : 0)) / sessionWords.length) * 100}%`,
+            background: 'var(--primary-gradient)',
+            transition: 'width 0.3s ease'
+          }} 
+        />
+      </div>
+
+      {/* AUDIO / LISTEN PROMPT CARD (Word is kept strictly HIDDEN!) */}
+      <div 
+        className="glass-panel" 
+        style={{ 
+          padding: '1.5rem', 
+          textAlign: 'center',
+          border: '1px solid var(--border-medium)',
+          position: 'relative',
+          overflow: 'hidden'
+        }}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+          <button
+            type="button"
+            onClick={() => playWordAudio()}
+            className="btn btn-primary"
+            style={{
+              borderRadius: '50px',
+              padding: '0.85rem 1.75rem',
+              fontSize: '1.05rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              transform: isSpeaking ? 'scale(1.04)' : 'none',
+              boxShadow: isSpeaking ? '0 0 25px rgba(99, 102, 241, 0.7)' : '0 4px 14px rgba(99, 102, 241, 0.4)',
+              transition: 'all 0.2s ease',
+            }}
+            title="Wort erneut anhören"
+          >
+            {speechError ? <VolumeX size={22} /> : <Volume2 size={22} className={isSpeaking ? 'pulse-anim' : ''} />}
+            <span>{isSpeaking ? 'Wort wird vorgelesen...' : 'Nochmal anhören 🔊'}</span>
+          </button>
+
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: '0.2rem 0 0' }}>
+            Das Wort ist verborgen. Höre gut zu und schreibe es mit deinem <strong>Apple Pencil</strong> in das Schreibfeld!
+          </p>
+
+          {/* Letter count hint to help student */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '0.2rem' }}>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', letterSpacing: '0.15em', fontFamily: 'monospace' }}>
+              {currentWord?.word ? currentWord.word.split('').map(c => c === ' ' ? '  ' : '_').join(' ') : ''}
+            </span>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+              ({currentWord?.word.replace(/\s+/g, '').length} Buchstaben)
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* APPLE PENCIL WRITING CANVAS AREA */}
+      {!isSubmitted && (
+        <div 
+          className="glass-panel"
+          style={{ 
+            padding: '1.25rem', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '0.85rem',
+            position: 'relative'
+          }}
+        >
+          {/* Canvas Toolbar */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={() => setActiveTool('pen')}
+                className={`btn btn-sm ${activeTool === 'pen' && !isReverseTipDetected ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '0.45rem 0.85rem' }}
+                title="Stift aktivieren"
+              >
+                <Pencil size={15} />
+                <span>Stift</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTool('eraser')}
+                className={`btn btn-sm ${activeTool === 'eraser' || isReverseTipDetected ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '0.45rem 0.85rem' }}
+                title="Radiergummi (funktioniert auch automatisch über die Stiftrückseite!)"
+              >
+                <Eraser size={15} />
+                <span>Radierer</span>
+              </button>
+
+              {isReverseTipDetected && (
+                <span 
+                  style={{ 
+                    fontSize: '0.75rem', 
+                    padding: '0.25rem 0.6rem', 
+                    borderRadius: 'var(--radius-full)', 
+                    background: 'rgba(239, 68, 68, 0.2)', 
+                    color: '#f87171',
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.3rem'
+                  }}
+                >
+                  <Eraser size={12} />
+                  Stiftrückseite aktiv
+                </span>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={handleUndo}
+                className="btn btn-secondary btn-sm"
+                style={{ padding: '0.45rem 0.75rem' }}
+                title="Letzten Strich rückgängig machen"
+              >
+                <Undo2 size={15} />
+                <span>Rückgängig</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleClear}
+                className="btn btn-secondary btn-sm"
+                style={{ padding: '0.45rem 0.75rem', color: 'var(--text-muted)' }}
+                title="Schreibfeld komplett leeren"
+              >
+                <Trash2 size={15} />
+                <span>Leeren</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Canvas Wrapper with Ruled Notebook Paper Background */}
+          <div 
+            style={{ 
+              position: 'relative',
+              borderRadius: 'var(--radius-md)',
+              overflow: 'hidden',
+              boxShadow: 'inset 0 2px 6px rgba(0, 0, 0, 0.25)',
+              border: '2px solid rgba(255, 255, 255, 0.15)',
+              // High contrast school notebook lines: White paper with light blue lines & red margin
+              backgroundColor: '#ffffff',
+              backgroundImage: `
+                linear-gradient(to right, transparent 54px, #fca5a5 55px, transparent 56px),
+                repeating-linear-gradient(to bottom, #ffffff 0px, #ffffff 49px, #bfdbfe 50px)
+              `,
+              backgroundSize: '100% 100%, 100% 50px',
+              height: '280px',
+              touchAction: 'none',
+              cursor: activeTool === 'eraser' || isReverseTipDetected ? 'crosshair' : 'default'
+            }}
+          >
+            <canvas
+              ref={canvasRef}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'block',
+                touchAction: 'none',
+              }}
+            />
+
+            {!hasDrawn && (
+              <div 
+                style={{
+                  position: 'absolute',
+                  top: '50%',
+                  left: '60px',
+                  transform: 'translateY(-50%)',
+                  pointerEvents: 'none',
+                  color: '#94a3b8',
+                  fontSize: '1.1rem',
+                  fontStyle: 'italic',
+                  userSelect: 'none',
+                }}
+              >
+                Hier mit dem Apple Pencil schreiben... ✏️
+              </div>
+            )}
+          </div>
+
+          {/* Action / Submit Button */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={handleAcknowledgeAndGrade}
+              disabled={isGrading}
+              className="btn btn-primary"
+              style={{
+                minWidth: '220px',
+                padding: '0.85rem 1.5rem',
+                fontSize: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.6rem',
+              }}
+            >
+              {isGrading ? (
+                <>
+                  <Loader2 size={18} className="spin-anim" />
+                  <span>Gemini korrigiert...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles size={18} />
+                  <span>Fertig & Prüfen ➔</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Grading Error / Fallback UI */}
+          {gradingError && (
+            <div 
+              style={{ 
+                background: 'rgba(239, 68, 68, 0.1)', 
+                border: '1px solid var(--danger)', 
+                borderRadius: 'var(--radius-md)', 
+                padding: '1rem', 
+                marginTop: '0.5rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.6rem'
+              }}
+            >
+              <div style={{ color: '#f87171', fontSize: '0.9rem', fontWeight: 600 }}>
+                ⚠️ {gradingError}
+              </div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Gemini konnte nicht erreicht werden. Möchtest du deine Handschrift selbst werten?
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
+                <button
+                  type="button"
+                  onClick={() => handleManualGrading(true)}
+                  className="btn btn-success btn-sm"
+                  style={{ padding: '0.4rem 0.85rem' }}
+                >
+                  <CheckCircle2 size={15} />
+                  <span>Ich habe es richtig geschrieben</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleManualGrading(false)}
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '0.4rem 0.85rem' }}
+                >
+                  <XCircle size={15} />
+                  <span>Ich hatte einen Fehler</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ACKNOWLEDGED RESULT VIEW (Reveals Word, Translation & Grade) */}
+      {isSubmitted && gradeResult && (
+        <div 
+          className="glass-panel"
+          style={{ 
+            padding: '2rem', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '1.5rem',
+            border: gradeResult.isCorrect ? '2px solid rgba(16, 185, 129, 0.4)' : '2px solid rgba(245, 158, 11, 0.4)',
+            boxShadow: gradeResult.isCorrect ? '0 12px 32px rgba(16, 185, 129, 0.15)' : '0 12px 32px rgba(245, 158, 11, 0.15)',
+          }}
+        >
+          {/* Top Grade Badge */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              {gradeResult.isCorrect ? (
+                <div 
+                  style={{ 
+                    width: '42px', 
+                    height: '42px', 
+                    borderRadius: '50%', 
+                    background: 'rgba(16, 185, 129, 0.2)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    color: 'var(--success)'
+                  }}
+                >
+                  <CheckCircle2 size={26} />
+                </div>
+              ) : (
+                <div 
+                  style={{ 
+                    width: '42px', 
+                    height: '42px', 
+                    borderRadius: '50%', 
+                    background: 'rgba(245, 158, 11, 0.2)', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    color: 'var(--warning)'
+                  }}
+                >
+                  <XCircle size={26} />
+                </div>
+              )}
+
+              <div>
+                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: gradeResult.isCorrect ? 'var(--success)' : 'var(--warning)' }}>
+                  {gradeResult.isCorrect ? 'Richtig geschrieben!' : 'Noch einmal üben'}
+                </div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  Gemini KI-Bewertung: <strong>{gradeResult.schoolGrade}</strong> ({gradeResult.score}%)
+                </div>
+              </div>
+            </div>
+
+            <div 
+              style={{ 
+                padding: '0.4rem 0.9rem', 
+                borderRadius: 'var(--radius-full)', 
+                background: gradeResult.isCorrect ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                color: gradeResult.isCorrect ? 'var(--success)' : 'var(--warning)',
+                fontWeight: 700,
+                fontSize: '0.9rem',
+              }}
+            >
+              Note: {gradeResult.schoolGrade}
+            </div>
+          </div>
+
+          {/* WORD & TRANSLATION REVEAL */}
+          <div 
+            style={{ 
+              background: 'var(--bg-surface-elevated)', 
+              borderRadius: 'var(--radius-md)', 
+              padding: '1.5rem', 
+              border: '1px solid var(--border-subtle)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '1rem'
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                Vokabel ({language === 'en' ? 'Englisch' : 'Latein'})
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.02em' }}>
+                  {currentWord?.word}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => playWordAudio()}
+                  className="btn btn-secondary btn-sm"
+                  style={{ padding: '0.45rem 0.75rem', borderRadius: '50px' }}
+                  title="Aussprache anhören"
+                >
+                  <Volume2 size={16} />
+                  <span>Aussprache</span>
+                </button>
+                {currentWord?.phonetic && (
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.95rem', fontFamily: 'monospace' }}>
+                    [{currentWord.phonetic}]
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '0.85rem' }}>
+              <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                Deutsche Übersetzung
+              </div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 600, color: 'var(--primary-light)' }}>
+                {currentWord?.translation}
+              </div>
+            </div>
+
+            {currentWord?.exampleSentence && (
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '0.85rem', fontSize: '0.9rem' }}>
+                <div style={{ color: 'var(--text-secondary)', fontStyle: 'italic', marginBottom: '0.2rem' }}>
+                  "{currentWord.exampleSentence}"
+                </div>
+                {currentWord.exampleTranslation && (
+                  <div style={{ color: 'var(--text-muted)' }}>
+                    "{currentWord.exampleTranslation}"
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* GEMINI FEEDBACK & OCR COMPARISON */}
+          <div 
+            style={{ 
+              background: 'rgba(99, 102, 241, 0.08)', 
+              borderRadius: 'var(--radius-md)', 
+              padding: '1.25rem', 
+              border: '1px solid rgba(99, 102, 241, 0.2)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.75rem'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary-light)', fontWeight: 700, fontSize: '0.95rem' }}>
+              <Sparkles size={16} />
+              <span>Gemini Lehrer-Feedback:</span>
+            </div>
+
+            <p style={{ color: 'var(--text-primary)', fontSize: '0.95rem', margin: 0, lineHeight: 1.5 }}>
+              {gradeResult.feedback}
+            </p>
+
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+              Aus deiner Handschrift erkannt: <strong style={{ color: '#ffffff' }}>"{gradeResult.recognizedWord}"</strong>
+            </div>
+
+            {/* Student's Handwriting Thumbnail Preview */}
+            {userHandwritingSnapshot && (
+              <div style={{ marginTop: '0.5rem' }}>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                  Deine Handschrift (Apple Pencil):
+                </div>
+                <div 
+                  style={{ 
+                    maxHeight: '120px', 
+                    borderRadius: 'var(--radius-sm)', 
+                    overflow: 'hidden', 
+                    border: '1px solid var(--border-medium)',
+                    display: 'inline-block',
+                    background: '#ffffff'
+                  }}
+                >
+                  <img 
+                    src={userHandwritingSnapshot} 
+                    alt="Deine Handschrift" 
+                    style={{ height: '110px', display: 'block', objectFit: 'contain' }} 
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* NEXT WORD BUTTON */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={handleNextWord}
+              className="btn btn-primary"
+              style={{
+                minWidth: '220px',
+                padding: '0.9rem 1.75rem',
+                fontSize: '1.05rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.6rem',
+              }}
+            >
+              <span>Nächstes Wort</span>
+              <ArrowRight size={18} />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

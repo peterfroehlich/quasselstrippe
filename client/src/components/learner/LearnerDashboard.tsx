@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { 
   Layers, 
   HelpCircle, 
-  PenTool, 
+  Pencil,
+  Keyboard,
   Grid, 
   Filter, 
   Shuffle, 
@@ -13,12 +14,14 @@ import { FlashcardView } from './FlashcardView';
 import { QuizView } from './QuizView';
 import { SpellingView } from './SpellingView';
 import { MatchingView } from './MatchingView';
+import { WritingView } from './WritingView';
 
 interface LearnerDashboardProps {
   words: WordItem[];
   language: Language;
   onRecordReview: (wordId: string, wasCorrect: boolean) => void;
   autoPlayAudio: boolean;
+  geminiApiKey?: string;
 }
 
 export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
@@ -26,6 +29,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
   language,
   onRecordReview,
   autoPlayAudio,
+  geminiApiKey,
 }) => {
   const [activeTab, setActiveTab] = useState<StudyMode>('flashcards');
   const [selectedLesson, setSelectedLesson] = useState<string>('all');
@@ -146,6 +150,21 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
 
         <button
           type="button"
+          onClick={() => setActiveTab('writing')}
+          className="learner-tab-btn"
+          style={{
+            background: activeTab === 'writing' ? 'var(--primary-gradient)' : 'var(--bg-surface-elevated)',
+            color: activeTab === 'writing' ? '#fff' : 'var(--text-secondary)',
+            border: activeTab === 'writing' ? 'none' : '1px solid var(--border-subtle)',
+            boxShadow: activeTab === 'writing' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
+          }}
+        >
+          <Pencil size={16} />
+          <span>Schreiben</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('spelling')}
           className="learner-tab-btn"
           style={{
@@ -155,8 +174,8 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
             boxShadow: activeTab === 'spelling' ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
           }}
         >
-          <PenTool size={16} />
-          <span>Schreibtraining</span>
+          <Keyboard size={16} />
+          <span>Tastatur-Training</span>
         </button>
 
         <button
@@ -174,6 +193,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
           <span>Paare finden</span>
         </button>
       </div>
+
 
       {activeWords.length === 0 ? (
         <div className="glass-panel" style={{ padding: '3.5rem 2rem', textAlign: 'center' }}>
@@ -210,6 +230,20 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
               language={language}
               onRecordReview={onRecordReview}
               onRestart={handleShuffle}
+            />
+          )}
+
+          {activeTab === 'writing' && (
+            <WritingView
+              words={activeWords}
+              allWords={languageWords}
+              language={language}
+              onRecordReview={onRecordReview}
+              onRestart={handleShuffle}
+              apiKey={geminiApiKey}
+              selectedLesson={selectedLesson}
+              availableLessons={lessons}
+              onSelectLesson={setSelectedLesson}
             />
           )}
 

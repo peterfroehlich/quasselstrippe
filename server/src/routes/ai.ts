@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getSettings } from '../db/database.js';
-import type { Language, WorksheetAnalysisResponse, ExtractedWordCandidate } from '../types.js';
+import type { Language, WorksheetAnalysisResponse, ExtractedWordCandidate, HandwritingGradeResponse } from '../types.js';
 
 export const aiRouter = Router();
 
@@ -141,3 +141,136 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
     res.status(500).json({ error: error.message || 'Worksheet analysis failed' });
   }
 });
+
+// POST /api/ai/grade-handwriting
+aiRouter.post('/grade-handwriting', async (req: Request, res: Response) => {
+  try {
+    const { base64Data, mimeType = 'image/jpeg', expectedWord = '', language = 'en', apiKey: customApiKey } = req.body;
+
+    if (!base64Data) {
+      return res.status(400).json({ error: 'base64Data is required' });
+    }
+
+    if (!expectedWord) {
+      return res.status(400).json({ error: 'expectedWord is required' });
+    }
+
+    const settings = getSettings();
+    const apiKey = process.env.GEMINI_API_KEY || customApiKey || settings.geminiApiKey;
+
+    if (!apiKey) {
+      return res.status(400).json({
+        error: 'Kein Gemini API-Schlüssel konfiguriert. Bitte in den Einstellungen hinterlegen oder als GEMINI_API_KEY im Docker-Container angeben.',
+      });
+    }
+
+    const targetLangName = language === 'en' ? 'Englisch' : 'Latein';
+
+    const systemPrompt = `Du bist ein erfahrener und ermutigender Fremdsprachenlehrer für deutsche Schüler (${targetLangName}).
+Ein Schüler hat handschriftlich (per Tablet / Apple Pencil) versucht, eine Vokabel zu schreiben.
+
+Vorgegebenes Zielwort: "${expectedWord}"
+Zielsprache: ${targetLangName}
+
+Aufgaben:
+1. Erkenne die Handschrift des Schülers auf dem Bild (OCR).
+2. Vergleiche das Geschriebene genau mit dem Zielwort "${expectedWord}".
+   - Prüfe die Rechtschreibung (fehlende, zusätzliche oder vertauschte Buchstaben).
+   - Sei bei Groß-/Kleinschreibung tolerant, sofern die Buchstaben sonst korrekt sind.
+3. Bewerte das Ergebnis:
+   - "recognizedWord": Was genau hat der Schüler geschrieben? (z.B. "${expectedWord}" oder das fehlerhafte Wort). Falls das Feld leer ist oder nichts lesbar ist: "(nichts lesbar)".
+   - "isCorrect": true, wenn das Zielwort im Wesentlichen oder vollständig korrekt geschrieben wurde. false bei Rechtschreibfehlern oder falschem Wort.
+   - "score": Punktzahl von 0 bis 100 (100 = perfekt, 85-95 = sehr gut / lesbar, 50-70 = fast richtig aber Rechtschreibfehler, 0-30 = falsch oder unleserlich).
+   - "schoolGrade": Deutsche Schulnote als String, z.B. "1 (Sehr gut)", "2 (Gut)", "3 (Befriedigend)", "4 (Ausreichend)", "5 (Mangelhaft)", "6 (Ungenügend)".
+   - "feedback": 1 bis 2 freundliche, motivierende Sätze auf Deutsch. Erkläre bei Fehlern kurz und schülergerecht, welcher Buchstabe fehlt oder korrigiert werden sollte.
+
+Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke außerhalb des JSON:
+{
+  "recognizedWord": "das erkannte Wort",
+  "isCorrect": true,
+  "score": 100,
+  "schoolGrade": "1 (Sehr gut)",
+  "feedback": "Klasse gemacht! Fehlerfrei geschrieben."
+}`;
+
+    const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+    const models = ['gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-3.5-flash'];
+    let lastError: Error | null = null;
+    let resultData: HandwritingGradeResponse | null = null;
+
+    for (const model of models) {
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    { text: systemPrompt },
+                    {
+                      inline_data: {
+                        mime_type: mimeType,
+                        data: cleanBase64,
+                      },
+                    },
+                  ],
+                },
+              ],
+              generationConfig: {
+                temperature: 0.1,
+                responseMimeType: 'application/json',
+              },
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorJson = (await response.json().catch(() => null)) as any;
+          const errMsg = errorJson?.error?.message || `HTTP ${response.status}`;
+          throw new Error(`Gemini API (${model}): ${errMsg}`);
+        }
+
+        const data = (await response.json()) as any;
+        const parts = data.candidates?.[0]?.content?.parts || [];
+        const textPart = parts.find((p: any) => typeof p.text === 'string' && p.text.trim())?.text;
+        if (!textPart) {
+          throw new Error('Keine Antwort von Gemini erhalten.');
+        }
+
+        let parsed: any;
+        try {
+          const jsonMatch = textPart.match(/\{[\s\S]*\}/);
+          const jsonStr = jsonMatch ? jsonMatch[0] : textPart.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+          parsed = JSON.parse(jsonStr);
+        } catch {
+          throw new Error('Gemini-Antwort konnte nicht als JSON interpretiert werden.');
+        }
+
+        resultData = {
+          recognizedWord: parsed.recognizedWord || '(unbekannt)',
+          isCorrect: Boolean(parsed.isCorrect),
+          score: typeof parsed.score === 'number' ? parsed.score : parsed.isCorrect ? 100 : 40,
+          schoolGrade: parsed.schoolGrade || (parsed.isCorrect ? '1 (Sehr gut)' : '5 (Mangelhaft)'),
+          feedback: parsed.feedback || (parsed.isCorrect ? 'Super gemacht!' : 'Übe dieses Wort noch einmal.'),
+        };
+        break;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+      }
+    }
+
+    if (!resultData) {
+      throw lastError || new Error('Handschrift-Bewertung fehlgeschlagen.');
+    }
+
+    res.json(resultData);
+  } catch (error: any) {
+    console.error('Handwriting grading error:', error);
+    res.status(500).json({ error: error.message || 'Handwriting grading failed' });
+  }
+});
+

@@ -215,6 +215,7 @@ export const App: React.FC = () => {
             language={activeLanguage}
             onRecordReview={handleRecordReview}
             autoPlayAudio={settings.autoPlayAudio}
+            geminiApiKey={settings.geminiApiKey}
           />
         ) : (
           <AdminDashboard

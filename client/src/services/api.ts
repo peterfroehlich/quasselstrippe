@@ -1,4 +1,4 @@
-import type { WordItem, AppSettings, Language, WorksheetAnalysisResponse, UserProfile, LearnerStats } from '../types/vocabulary';
+import type { WordItem, AppSettings, Language, WorksheetAnalysisResponse, UserProfile, LearnerStats, HandwritingGradeResponse } from '../types/vocabulary';
 
 const API_BASE = '/api';
 
@@ -230,3 +230,23 @@ export async function apiAnalyzeWorksheet(params: {
   }
   return res.json();
 }
+
+export async function apiGradeHandwriting(params: {
+  base64Data: string;
+  mimeType?: string;
+  expectedWord: string;
+  language: Language;
+  apiKey?: string;
+}): Promise<HandwritingGradeResponse> {
+  const res = await fetch(`${API_BASE}/ai/grade-handwriting`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Handwriting grading failed on server');
+  }
+  return res.json();
+}
+

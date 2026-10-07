@@ -109,3 +109,11 @@ export interface LearnerStats {
   difficultWords: DifficultWordItem[];
 }
 
+export interface HandwritingGradeResponse {
+  recognizedWord: string;
+  isCorrect: boolean;
+  score: number;
+  schoolGrade: string;
+  feedback: string;
+}
+

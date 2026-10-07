@@ -93,7 +93,7 @@ export interface WorksheetAnalysisResponse {
   summary?: string;
 }
 
-export type StudyMode = 'flashcards' | 'quiz' | 'spelling' | 'match';
+export type StudyMode = 'flashcards' | 'quiz' | 'writing' | 'spelling' | 'match';
 
 export type AppMode = 'learner' | 'admin';
 
@@ -151,5 +151,13 @@ export interface LearnerStats {
   streakDays: number;
   history: ReviewHistoryPoint[];
   difficultWords: DifficultWordItem[];
+}
+
+export interface HandwritingGradeResponse {
+  recognizedWord: string;
+  isCorrect: boolean;
+  score: number;
+  schoolGrade: string;
+  feedback: string;
 }
 
