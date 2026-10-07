@@ -61,7 +61,6 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
       'gemini-3.5-flash',
       'gemini-3.5-flash-lite',
       'gemini-2.5-flash',
-      'gemini-2.0-flash',
     ];
     let lastError: Error | null = null;
     let resultData: WorksheetAnalysisResponse | null = null;
@@ -81,8 +80,8 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
                   parts: [
                     { text: systemPrompt },
                     {
-                      inline_data: {
-                        mime_type: mimeType,
+                      inlineData: {
+                        mimeType,
                         data: cleanBase64,
                       },
                     },
@@ -206,11 +205,10 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
     const models = [
-      'gemini-3.5-flash-lite',
       'gemini-3.8-flash',
       'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
       'gemini-2.5-flash',
-      'gemini-2.0-flash',
     ];
     let lastError: Error | null = null;
     let resultData: HandwritingGradeResponse | null = null;
@@ -219,7 +217,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
       try {
         const genConfig: Record<string, any> = {
           temperature: 0.1,
-          maxOutputTokens: 256,
+          maxOutputTokens: 2048,
           responseMimeType: 'application/json',
         };
 
@@ -236,7 +234,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              signal: AbortSignal.timeout(6000),
+              signal: AbortSignal.timeout(15000),
               body: JSON.stringify({
                 contents: [
                   {
@@ -244,8 +242,8 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
                     parts: [
                       { text: systemPrompt },
                       {
-                        inline_data: {
-                          mime_type: mimeType,
+                        inlineData: {
+                          mimeType,
                           data: cleanBase64,
                         },
                       },
