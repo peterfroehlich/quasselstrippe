@@ -311,34 +311,82 @@ export const WritingView: React.FC<WritingViewProps> = ({
     setIsReverseTipDetected(false);
   };
 
-  // Convert canvas to white-background JPEG base64 (downscaled for fast network transfer and crisp OCR)
+  // Convert canvas to white-background JPEG base64 cropped to handwriting bounding box
+  // Cropping eliminates whitespace, reducing multimodal token tiles and network latency
   const exportCanvasBase64 = (): string => {
     const canvas = canvasRef.current;
     if (!canvas) return '';
 
-    const maxDim = 800;
-    let width = canvas.width;
-    let height = canvas.height;
-    if (width > maxDim || height > maxDim) {
-      if (width > height) {
-        height = Math.round((height * maxDim) / width);
-        width = maxDim;
+    const origCtx = canvas.getContext('2d');
+    if (!origCtx) return '';
+
+    const origWidth = canvas.width;
+    const origHeight = canvas.height;
+
+    // Fast bounding box detection on drawn pixels (canvas is transparent where unpainted)
+    let minX = origWidth;
+    let minY = origHeight;
+    let maxX = 0;
+    let maxY = 0;
+    let hasInk = false;
+
+    try {
+      const imgData = origCtx.getImageData(0, 0, origWidth, origHeight);
+      const data = imgData.data;
+      // Step by 2 pixels for high performance on retina displays
+      for (let y = 0; y < origHeight; y += 2) {
+        for (let x = 0; x < origWidth; x += 2) {
+          const alpha = data[(y * origWidth + x) * 4 + 3];
+          if (alpha > 20) {
+            hasInk = true;
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+    } catch {
+      hasInk = false;
+    }
+
+    let sourceX = 0;
+    let sourceY = 0;
+    let sourceW = origWidth;
+    let sourceH = origHeight;
+
+    if (hasInk && maxX >= minX && maxY >= minY) {
+      const padding = 28;
+      sourceX = Math.max(0, minX - padding);
+      sourceY = Math.max(0, minY - padding);
+      sourceW = Math.min(origWidth - sourceX, (maxX - minX) + padding * 2);
+      sourceH = Math.min(origHeight - sourceY, (maxY - minY) + padding * 2);
+    }
+
+    // Limit maximum dimension to 500px for optimal single-tile OCR processing
+    const maxDim = 500;
+    let destW = sourceW;
+    let destH = sourceH;
+    if (destW > maxDim || destH > maxDim) {
+      if (destW > destH) {
+        destH = Math.round((destH * maxDim) / destW);
+        destW = maxDim;
       } else {
-        width = Math.round((width * maxDim) / height);
-        height = maxDim;
+        destW = Math.round((destW * maxDim) / destH);
+        destH = maxDim;
       }
     }
 
     const exportCanvas = document.createElement('canvas');
-    exportCanvas.width = width;
-    exportCanvas.height = height;
+    exportCanvas.width = destW;
+    exportCanvas.height = destH;
     const ctx = exportCanvas.getContext('2d');
     if (ctx) {
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, width, height);
-      ctx.drawImage(canvas, 0, 0, width, height);
+      ctx.fillRect(0, 0, destW, destH);
+      ctx.drawImage(canvas, sourceX, sourceY, sourceW, sourceH, 0, 0, destW, destH);
     }
-    return exportCanvas.toDataURL('image/jpeg', 0.82);
+    return exportCanvas.toDataURL('image/jpeg', 0.80);
   };
 
   // Student acknowledges and submits writing for grading

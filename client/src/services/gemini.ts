@@ -356,23 +356,21 @@ export async function gradeHandwriting(params: {
   }
 
   const targetLangName = language === 'en' ? 'Englisch' : 'Latein';
-  const systemPrompt = `Du bist ein erfahrener und ermutigender Fremdsprachenlehrer für deutsche Schüler (${targetLangName}).
-Ein Schüler hat handschriftlich (per Tablet / Apple Pencil) versucht, eine Vokabel zu schreiben.
+  const systemPrompt = `Du bist ein erfahrener Fremdsprachenlehrer für ${targetLangName}.
+Ein Schüler hat handschriftlich versucht, ein Vokabelwort zu schreiben.
 
-Vorgegebenes Zielwort: "${expectedWord}"
+Zielwort: "${expectedWord}"
 Zielsprache: ${targetLangName}
 
 Aufgaben:
-1. Erkenne die Handschrift des Schülers auf dem Bild (OCR).
-2. Vergleiche das Geschriebene genau mit dem Zielwort "${expectedWord}".
-   - Prüfe die Rechtschreibung (fehlende, zusätzliche oder vertauschte Buchstaben).
-   - Sei bei Groß-/Kleinschreibung tolerant, sofern die Buchstaben sonst korrekt sind.
-3. Bewerte das Ergebnis:
-   - "recognizedWord": Was genau hat der Schüler geschrieben? (z.B. "${expectedWord}" oder das fehlerhafte Wort). Falls das Feld leer ist oder nichts lesbar ist: "(nichts lesbar)".
-   - "isCorrect": true, wenn das Zielwort im Wesentlichen oder vollständig korrekt geschrieben wurde. false bei Rechtschreibfehlern oder falschem Wort.
-   - "score": Punktzahl von 0 bis 100 (100 = perfekt, 85-95 = sehr gut / lesbar, 50-70 = fast richtig aber Rechtschreibfehler, 0-30 = falsch oder unleserlich).
-   - "schoolGrade": Deutsche Schulnote als String, z.B. "1 (Sehr gut)", "2 (Gut)", "3 (Befriedigend)", "4 (Ausreichend)", "5 (Mangelhaft)", "6 (Ungenügend)".
-   - "feedback": 1 bis 2 freundliche, motivierende Sätze auf Deutsch. Erkläre bei Fehlern kurz und schülergerecht, welcher Buchstabe fehlt oder korrigiert werden sollte.
+1. Erkenne das geschriebene Wort auf dem Bild (OCR).
+2. Vergleiche mit "${expectedWord}" (Rechtschreibung genau prüfen, Groß-/Kleinschreibung tolerant).
+3. Bewerte:
+- "recognizedWord": Was hat der Schüler geschrieben? (oder "(nichts lesbar)")
+- "isCorrect": true wenn richtig geschrieben, sonst false.
+- "score": 0 bis 100 (100 = perfekt, 85-95 = sehr gut, 50-70 = fast richtig aber Rechtschreibfehler, 0-30 = falsch oder unleserlich).
+- "schoolGrade": Deutsche Schulnote (z.B. "1 (Sehr gut)", "2 (Gut)", "3 (Befriedigend)", "4 (Ausreichend)", "5 (Mangelhaft)", "6 (Ungenügend)").
+- "feedback": Maximal 1 sehr kurzer, freundlicher Satz auf Deutsch (z.B. "Klasse gemacht!" oder "Achte auf das 'e' am Ende.").
 
 Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke außerhalb des JSON:
 {
@@ -385,9 +383,9 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 
   const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
   const models = [
+    'gemini-3.5-flash-lite',
     'gemini-3.8-flash',
     'gemini-3.5-flash',
-    'gemini-3.5-flash-lite',
     'gemini-2.5-flash',
     'gemini-2.0-flash',
   ];
@@ -395,36 +393,56 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 
   for (const model of models) {
     try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          signal: AbortSignal.timeout(12000),
-          body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [
-                  { text: systemPrompt },
-                  {
-                    inline_data: {
-                      mime_type: mimeType,
-                      data: cleanBase64,
-                    },
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: 'application/json',
+      const genConfig: Record<string, any> = {
+        temperature: 0.1,
+        maxOutputTokens: 256,
+        responseMimeType: 'application/json',
+      };
+
+      // Suppress reasoning thinking tokens to achieve sub-second grading
+      if (model.startsWith('gemini-3')) {
+        genConfig.thinkingConfig = { thinkingLevel: 'low' };
+      } else if (model.startsWith('gemini-2.5')) {
+        genConfig.thinkingConfig = { thinkingBudget: 0 };
+      }
+
+      const sendRequest = async (config: Record<string, any>) => {
+        return fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
             },
-          }),
-        }
-      );
+            signal: AbortSignal.timeout(6000),
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    { text: systemPrompt },
+                    {
+                      inline_data: {
+                        mime_type: mimeType,
+                        data: cleanBase64,
+                      },
+                    },
+                  ],
+                },
+              ],
+              generationConfig: config,
+            }),
+          }
+        );
+      };
+
+      let response = await sendRequest(genConfig);
+
+      // Gracefully retry without thinkingConfig if the model endpoint rejects thinking parameters
+      if (!response.ok && response.status === 400 && genConfig.thinkingConfig) {
+        const { thinkingConfig, ...plainConfig } = genConfig;
+        response = await sendRequest(plainConfig);
+      }
 
       if (!response.ok) {
         const errorJson = await response.json().catch(() => null);
