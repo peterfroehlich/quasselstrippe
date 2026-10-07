@@ -1263,35 +1263,43 @@ export const WritingView: React.FC<WritingViewProps> = ({
             gap: '0.85rem'
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary-light)', fontWeight: 700, fontSize: '0.95rem' }}>
-            <Sparkles size={16} />
-            <span>Gemini Lehrer-Feedback{gradeResult.model ? ` (${gradeResult.model})` : ''}:</span>
-          </div>
+          {/* Top Row: Title (with line break for model) on Left, "Nächstes Wort" on Top Right */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary-light)', fontWeight: 700, fontSize: '0.95rem' }}>
+                <Sparkles size={16} />
+                <span>Gemini Lehrer-Feedback:</span>
+              </div>
+              {gradeResult.model && (
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500, marginTop: '0.15rem', marginLeft: '1.45rem' }}>
+                  ({gradeResult.model})
+                </div>
+              )}
+            </div>
 
-          <p style={{ color: 'var(--text-primary)', fontSize: '0.95rem', margin: 0, lineHeight: 1.55 }}>
-            {gradeResult.feedback}
-          </p>
-
-          {/* NEXT WORD BUTTON (lives inside this panel) */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.35rem' }}>
             <button
               type="button"
               onClick={handleNextWord}
               className="btn btn-primary"
               style={{
-                minWidth: '200px',
-                padding: '0.85rem 1.75rem',
-                fontSize: '1.05rem',
-                display: 'flex',
+                minWidth: '180px',
+                padding: '0.65rem 1.35rem',
+                fontSize: '0.98rem',
+                display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '0.6rem',
+                gap: '0.55rem',
+                flexShrink: 0,
               }}
             >
               <span>Nächstes Wort</span>
-              <ArrowRight size={18} />
+              <ArrowRight size={17} />
             </button>
           </div>
+
+          <p style={{ color: 'var(--text-primary)', fontSize: '0.95rem', margin: 0, lineHeight: 1.55 }}>
+            {gradeResult.feedback}
+          </p>
         </div>
       )}
 
