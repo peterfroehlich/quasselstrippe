@@ -241,6 +241,7 @@ export async function apiGradeHandwriting(params: {
   const res = await fetch(`${API_BASE}/ai/grade-handwriting`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(25000),
     body: JSON.stringify(params),
   });
   if (!res.ok) {
@@ -249,4 +250,5 @@ export async function apiGradeHandwriting(params: {
   }
   return res.json();
 }
+
 

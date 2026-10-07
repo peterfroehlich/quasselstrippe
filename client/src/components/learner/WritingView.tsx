@@ -311,21 +311,34 @@ export const WritingView: React.FC<WritingViewProps> = ({
     setIsReverseTipDetected(false);
   };
 
-  // Convert canvas to white-background JPEG base64
+  // Convert canvas to white-background JPEG base64 (downscaled for fast network transfer and crisp OCR)
   const exportCanvasBase64 = (): string => {
     const canvas = canvasRef.current;
     if (!canvas) return '';
 
+    const maxDim = 800;
+    let width = canvas.width;
+    let height = canvas.height;
+    if (width > maxDim || height > maxDim) {
+      if (width > height) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
+    }
+
     const exportCanvas = document.createElement('canvas');
-    exportCanvas.width = canvas.width;
-    exportCanvas.height = canvas.height;
+    exportCanvas.width = width;
+    exportCanvas.height = height;
     const ctx = exportCanvas.getContext('2d');
     if (ctx) {
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-      ctx.drawImage(canvas, 0, 0);
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(canvas, 0, 0, width, height);
     }
-    return exportCanvas.toDataURL('image/jpeg', 0.92);
+    return exportCanvas.toDataURL('image/jpeg', 0.82);
   };
 
   // Student acknowledges and submits writing for grading
