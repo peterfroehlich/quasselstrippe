@@ -57,7 +57,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
   const [isGrading, setIsGrading] = useState(false);
   const [gradeResult, setGradeResult] = useState<HandwritingGradeResponse | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [userHandwritingSnapshot, setUserHandwritingSnapshot] = useState<string | null>(null);
   const [gradingError, setGradingError] = useState<string | null>(null);
 
   // Overall session metrics
@@ -146,7 +145,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
     setIsSubmitted(false);
     setGradeResult(null);
     setGradingError(null);
-    setUserHandwritingSnapshot(null);
     setHasDrawn(false);
     setActiveTool('pen');
     setIsReverseTipDetected(false);
@@ -642,7 +640,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
     setGradingError(null);
 
     const base64Data = exportCanvasBase64();
-    setUserHandwritingSnapshot(base64Data);
 
     try {
       const result = await gradeHandwriting({
@@ -890,183 +887,190 @@ export const WritingView: React.FC<WritingViewProps> = ({
         />
       </div>
 
-      {/* APPLE PENCIL WRITING CANVAS AREA */}
-      {!isSubmitted && (
-        <div 
-          className="glass-panel"
-          style={{ 
-            padding: '1.25rem', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            gap: '0.85rem',
-            position: 'relative'
-          }}
-        >
-          {/* Canvas Toolbar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <button
-                type="button"
-                onClick={() => setActiveTool('pen')}
-                className={`btn btn-sm ${activeTool === 'pen' && !isReverseTipDetected ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '0.45rem 0.85rem' }}
-                title="Stift aktivieren"
-              >
-                <Pencil size={15} />
-                <span>Stift</span>
-              </button>
+      {/* APPLE PENCIL WRITING CANVAS AREA (Stays in place!) */}
+      <div 
+        className="glass-panel"
+        style={{ 
+          padding: '1.25rem', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '0.85rem',
+          position: 'relative'
+        }}
+      >
+        {/* Canvas Toolbar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={() => setActiveTool('pen')}
+              disabled={isSubmitted}
+              className={`btn btn-sm ${activeTool === 'pen' && !isReverseTipDetected ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '0.45rem 0.85rem', opacity: isSubmitted ? 0.6 : 1 }}
+              title="Stift aktivieren"
+            >
+              <Pencil size={15} />
+              <span>Stift</span>
+            </button>
 
-              <button
-                type="button"
-                onClick={() => setActiveTool('eraser')}
-                className={`btn btn-sm ${activeTool === 'eraser' || isReverseTipDetected ? 'btn-primary' : 'btn-secondary'}`}
-                style={{ padding: '0.45rem 0.85rem' }}
-                title="Radiergummi (funktioniert auch automatisch über die Stiftrückseite!)"
-              >
-                <Eraser size={15} />
-                <span>Radierer</span>
-              </button>
+            <button
+              type="button"
+              onClick={() => setActiveTool('eraser')}
+              disabled={isSubmitted}
+              className={`btn btn-sm ${activeTool === 'eraser' || isReverseTipDetected ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '0.45rem 0.85rem', opacity: isSubmitted ? 0.6 : 1 }}
+              title="Radiergummi (funktioniert auch automatisch über die Stiftrückseite!)"
+            >
+              <Eraser size={15} />
+              <span>Radierer</span>
+            </button>
 
-              {/* Palm Rejection / Stylus Protection Toggle */}
-              <button
-                type="button"
-                onClick={() => setIsStylusPreferred(prev => !prev)}
-                className={`btn btn-sm ${isStylusPreferred ? 'btn-primary' : 'btn-secondary'}`}
+            {/* Palm Rejection / Stylus Protection Toggle */}
+            <button
+              type="button"
+              onClick={() => setIsStylusPreferred(prev => !prev)}
+              disabled={isSubmitted}
+              className={`btn btn-sm ${isStylusPreferred ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ 
+                padding: '0.45rem 0.85rem',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                fontSize: '0.82rem',
+                opacity: isSubmitted ? 0.6 : 1,
+                ...(isStylusPreferred ? { background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', borderColor: 'rgba(16, 185, 129, 0.4)' } : {})
+              }}
+              title={isStylusPreferred 
+                ? "Handballenschutz aktiv: Nur der Apple Pencil zeichnet. Die Hand kann auf dem Bildschirm abgelegt werden." 
+                : "Handballenschutz aus: Auch Finger zeichnen. Klicken, um Handablage-Schutz zu aktivieren."}
+            >
+              {isStylusPreferred ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
+              <span>{isStylusPreferred ? 'Handballenschutz' : 'Finger erlaubt'}</span>
+            </button>
+
+            {isReverseTipDetected && (
+              <span 
                 style={{ 
-                  padding: '0.45rem 0.85rem',
+                  fontSize: '0.75rem', 
+                  padding: '0.25rem 0.6rem', 
+                  borderRadius: 'var(--radius-full)', 
+                  background: 'rgba(239, 68, 68, 0.2)', 
+                  color: '#f87171',
+                  fontWeight: 600,
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '0.35rem',
-                  fontSize: '0.82rem',
-                  ...(isStylusPreferred ? { background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', borderColor: 'rgba(16, 185, 129, 0.4)' } : {})
-                }}
-                title={isStylusPreferred 
-                  ? "Handballenschutz aktiv: Nur der Apple Pencil zeichnet. Die Hand kann auf dem Bildschirm abgelegt werden." 
-                  : "Handballenschutz aus: Auch Finger zeichnen. Klicken, um Handablage-Schutz zu aktivieren."}
-              >
-                {isStylusPreferred ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
-                <span>{isStylusPreferred ? 'Handballenschutz' : 'Finger erlaubt'}</span>
-              </button>
-
-              {isReverseTipDetected && (
-                <span 
-                  style={{ 
-                    fontSize: '0.75rem', 
-                    padding: '0.25rem 0.6rem', 
-                    borderRadius: 'var(--radius-full)', 
-                    background: 'rgba(239, 68, 68, 0.2)', 
-                    color: '#f87171',
-                    fontWeight: 600,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.3rem'
-                  }}
-                >
-                  <Eraser size={12} />
-                  Stiftrückseite aktiv
-                </span>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <button
-                type="button"
-                onClick={handleUndo}
-                className="btn btn-secondary btn-sm"
-                style={{ padding: '0.45rem 0.75rem' }}
-                title="Letzten Strich rückgängig machen"
-              >
-                <Undo2 size={15} />
-                <span>Rückgängig</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleClear}
-                className="btn btn-secondary btn-sm"
-                style={{ padding: '0.45rem 0.75rem', color: 'var(--text-muted)' }}
-                title="Schreibfeld komplett leeren"
-              >
-                <Trash2 size={15} />
-                <span>Leeren</span>
-              </button>
-
-              {currentWord && (
-                <AudioButton
-                  text={currentWord.word}
-                  language={language}
-                  size="sm"
-                  title="Wort anhören 🔊"
-                />
-              )}
-            </div>
-          </div>
-
-          {/* Canvas Wrapper with Ruled Notebook Paper Background */}
-          <div 
-            style={{ 
-              position: 'relative',
-              borderRadius: 'var(--radius-md)',
-              overflow: 'hidden',
-              boxShadow: 'inset 0 2px 6px rgba(0, 0, 0, 0.25)',
-              border: '2px solid rgba(255, 255, 255, 0.15)',
-              // High contrast school notebook lines: White paper with light blue lines & red margin
-              backgroundColor: '#ffffff',
-              backgroundImage: `
-                linear-gradient(to right, transparent 54px, #fca5a5 55px, transparent 56px),
-                repeating-linear-gradient(to bottom, #ffffff 0px, #ffffff 49px, #bfdbfe 50px)
-              `,
-              backgroundSize: '100% 100%, 100% 50px',
-              height: '280px',
-              touchAction: 'none',
-              cursor: activeTool === 'eraser' || isReverseTipDetected ? 'crosshair' : 'default'
-            }}
-          >
-            <canvas
-              ref={canvasRef}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerCancel}
-              onLostPointerCapture={handleLostPointerCapture}
-              style={{
-                width: '100%',
-                height: '100%',
-                display: 'block',
-                touchAction: 'none',
-              }}
-            />
-
-            {!hasDrawn && (
-              <div 
-                style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '60px',
-                  transform: 'translateY(-50%)',
-                  pointerEvents: 'none',
-                  color: '#94a3b8',
-                  fontSize: '1.1rem',
-                  fontStyle: 'italic',
-                  userSelect: 'none',
+                  gap: '0.3rem'
                 }}
               >
-                Hier mit dem Apple Pencil schreiben... ✏️
-                {currentWord && (
-                  <span style={{ fontSize: '0.9rem', marginLeft: '0.6rem', color: '#64748b', fontStyle: 'normal' }}>
-                    ({currentWord.word.replace(/\s+/g, '').length} Buchstaben)
-                  </span>
-                )}
-                {isStylusPreferred && (
-                  <span style={{ fontSize: '0.85rem', marginLeft: '0.5rem', opacity: 0.85, color: '#059669', fontStyle: 'normal' }}>
-                    (Handballenschutz aktiv 🛡️)
-                  </span>
-                )}
-              </div>
+                <Eraser size={12} />
+                Stiftrückseite aktiv
+              </span>
             )}
           </div>
 
-          {/* Action / Submit Button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={isSubmitted}
+              className="btn btn-secondary btn-sm"
+              style={{ padding: '0.45rem 0.75rem', opacity: isSubmitted ? 0.6 : 1 }}
+              title="Letzten Strich rückgängig machen"
+            >
+              <Undo2 size={15} />
+              <span>Rückgängig</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleClear}
+              disabled={isSubmitted}
+              className="btn btn-secondary btn-sm"
+              style={{ padding: '0.45rem 0.75rem', color: 'var(--text-muted)', opacity: isSubmitted ? 0.6 : 1 }}
+              title="Schreibfeld komplett leeren"
+            >
+              <Trash2 size={15} />
+              <span>Leeren</span>
+            </button>
+
+            {currentWord && (
+              <AudioButton
+                text={currentWord.word}
+                language={language}
+                size="sm"
+                title="Wort anhören 🔊"
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Canvas Wrapper with Ruled Notebook Paper Background */}
+        <div 
+          style={{ 
+            position: 'relative',
+            borderRadius: 'var(--radius-md)',
+            overflow: 'hidden',
+            boxShadow: 'inset 0 2px 6px rgba(0, 0, 0, 0.25)',
+            border: '2px solid rgba(255, 255, 255, 0.15)',
+            // High contrast school notebook lines: White paper with light blue lines & red margin
+            backgroundColor: '#ffffff',
+            backgroundImage: `
+              linear-gradient(to right, transparent 54px, #fca5a5 55px, transparent 56px),
+              repeating-linear-gradient(to bottom, #ffffff 0px, #ffffff 49px, #bfdbfe 50px)
+            `,
+            backgroundSize: '100% 100%, 100% 50px',
+            height: '280px',
+            touchAction: 'none',
+            cursor: isSubmitted ? 'default' : (activeTool === 'eraser' || isReverseTipDetected ? 'crosshair' : 'default')
+          }}
+        >
+          <canvas
+            ref={canvasRef}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerCancel}
+            onLostPointerCapture={handleLostPointerCapture}
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'block',
+              touchAction: 'none',
+              pointerEvents: isSubmitted ? 'none' : 'auto',
+            }}
+          />
+
+          {!hasDrawn && (
+            <div 
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '60px',
+                transform: 'translateY(-50%)',
+                pointerEvents: 'none',
+                color: '#94a3b8',
+                fontSize: '1.1rem',
+                fontStyle: 'italic',
+                userSelect: 'none',
+              }}
+            >
+              Hier mit dem Apple Pencil schreiben... ✏️
+              {currentWord && (
+                <span style={{ fontSize: '0.9rem', marginLeft: '0.6rem', color: '#64748b', fontStyle: 'normal' }}>
+                  ({currentWord.word.replace(/\s+/g, '').length} Buchstaben)
+                </span>
+              )}
+              {isStylusPreferred && (
+                <span style={{ fontSize: '0.85rem', marginLeft: '0.5rem', opacity: 0.85, color: '#059669', fontStyle: 'normal' }}>
+                  (Handballenschutz aktiv 🛡️)
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Action / Submit Button (only before submission) */}
+        {!isSubmitted && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
             <button
               type="button"
@@ -1095,116 +1099,118 @@ export const WritingView: React.FC<WritingViewProps> = ({
               )}
             </button>
           </div>
+        )}
 
-          {/* Grading Error / Fallback UI */}
-          {gradingError && (
-            <div 
-              style={{ 
-                background: 'rgba(239, 68, 68, 0.1)', 
-                border: '1px solid var(--danger)', 
-                borderRadius: 'var(--radius-md)', 
-                padding: '1rem', 
-                marginTop: '0.5rem',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.6rem'
-              }}
-            >
-              <div style={{ color: '#f87171', fontSize: '0.9rem', fontWeight: 600 }}>
-                ⚠️ {gradingError}
-              </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Gemini konnte nicht erreicht werden. Möchtest du deine Handschrift selbst werten?
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
-                <button
-                  type="button"
-                  onClick={() => handleManualGrading(true)}
-                  className="btn btn-success btn-sm"
-                  style={{ padding: '0.4rem 0.85rem' }}
-                >
-                  <CheckCircle2 size={15} />
-                  <span>Ich habe es richtig geschrieben</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleManualGrading(false)}
-                  className="btn btn-secondary btn-sm"
-                  style={{ padding: '0.4rem 0.85rem' }}
-                >
-                  <XCircle size={15} />
-                  <span>Ich hatte einen Fehler</span>
-                </button>
-              </div>
+        {/* Grading Error / Fallback UI */}
+        {gradingError && !isSubmitted && (
+          <div 
+            style={{ 
+              background: 'rgba(239, 68, 68, 0.1)', 
+              border: '1px solid var(--danger)', 
+              borderRadius: 'var(--radius-md)', 
+              padding: '1rem', 
+              marginTop: '0.5rem',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.6rem'
+            }}
+          >
+            <div style={{ color: '#f87171', fontSize: '0.9rem', fontWeight: 600 }}>
+              ⚠️ {gradingError}
             </div>
-          )}
-        </div>
-      )}
+            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              Gemini konnte nicht erreicht werden. Möchtest du deine Handschrift selbst werten?
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.2rem' }}>
+              <button
+                type="button"
+                onClick={() => handleManualGrading(true)}
+                className="btn btn-success btn-sm"
+                style={{ padding: '0.4rem 0.85rem' }}
+              >
+                <CheckCircle2 size={15} />
+                <span>Ich habe es richtig geschrieben</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleManualGrading(false)}
+                className="btn btn-secondary btn-sm"
+                style={{ padding: '0.4rem 0.85rem' }}
+              >
+                <XCircle size={15} />
+                <span>Ich hatte einen Fehler</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
-      {/* ACKNOWLEDGED RESULT VIEW (Reveals Word, Translation & Grade) */}
+      {/* 1. RECOGNIZED TEXT & GRADE STATUS DIRECTLY BELOW WRITTEN PANEL */}
       {isSubmitted && gradeResult && (
         <div 
           className="glass-panel"
           style={{ 
-            padding: '2rem', 
+            padding: '1rem 1.5rem', 
             display: 'flex', 
-            flexDirection: 'column', 
-            gap: '1.5rem',
-            border: gradeResult.isCorrect ? '2px solid rgba(16, 185, 129, 0.4)' : '2px solid rgba(245, 158, 11, 0.4)',
-            boxShadow: gradeResult.isCorrect ? '0 12px 32px rgba(16, 185, 129, 0.15)' : '0 12px 32px rgba(245, 158, 11, 0.15)',
+            alignItems: 'center', 
+            justifyContent: 'space-between', 
+            flexWrap: 'wrap', 
+            gap: '1rem',
+            border: gradeResult.isCorrect ? '1.5px solid rgba(16, 185, 129, 0.4)' : '1.5px solid rgba(245, 158, 11, 0.4)',
+            background: gradeResult.isCorrect ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)',
           }}
         >
-          {/* Top Grade Badge */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              {gradeResult.isCorrect ? (
-                <div 
-                  style={{ 
-                    width: '42px', 
-                    height: '42px', 
-                    borderRadius: '50%', 
-                    background: 'rgba(16, 185, 129, 0.2)', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    color: 'var(--success)'
-                  }}
-                >
-                  <CheckCircle2 size={26} />
-                </div>
-              ) : (
-                <div 
-                  style={{ 
-                    width: '42px', 
-                    height: '42px', 
-                    borderRadius: '50%', 
-                    background: 'rgba(245, 158, 11, 0.2)', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    color: 'var(--warning)'
-                  }}
-                >
-                  <XCircle size={26} />
-                </div>
-              )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
+            {gradeResult.isCorrect ? (
+              <div 
+                style={{ 
+                  width: '38px', 
+                  height: '38px', 
+                  borderRadius: '50%', 
+                  background: 'rgba(16, 185, 129, 0.2)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  color: 'var(--success)',
+                  flexShrink: 0
+                }}
+              >
+                <CheckCircle2 size={24} />
+              </div>
+            ) : (
+              <div 
+                style={{ 
+                  width: '38px', 
+                  height: '38px', 
+                  borderRadius: '50%', 
+                  background: 'rgba(245, 158, 11, 0.2)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  color: 'var(--warning)',
+                  flexShrink: 0
+                }}
+              >
+                <XCircle size={24} />
+              </div>
+            )}
 
-              <div>
-                <div style={{ fontSize: '1.25rem', fontWeight: 800, color: gradeResult.isCorrect ? 'var(--success)' : 'var(--warning)' }}>
-                  {gradeResult.isCorrect ? 'Richtig geschrieben!' : 'Noch einmal üben'}
-                </div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  Gemini KI-Bewertung: <strong>{gradeResult.schoolGrade}</strong> ({gradeResult.score}%)
-                </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.95rem', color: 'var(--text-secondary)' }}>
+                  Aus deiner Handschrift erkannt:
+                </span>
+                <strong style={{ fontSize: '1.35rem', color: '#ffffff', letterSpacing: '0.02em' }}>
+                  "{gradeResult.recognizedWord}"
+                </strong>
                 {gradeResult.capitalizationError && (
-                  <div 
+                  <span 
                     style={{
-                      marginTop: '0.4rem',
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '0.35rem',
-                      background: 'rgba(245, 158, 11, 0.15)',
-                      border: '1px solid rgba(245, 158, 11, 0.35)',
+                      gap: '0.3rem',
+                      background: 'rgba(245, 158, 11, 0.2)',
+                      border: '1px solid rgba(245, 158, 11, 0.4)',
                       color: '#fbbf24',
                       padding: '0.2rem 0.6rem',
                       borderRadius: 'var(--radius-sm)',
@@ -1212,155 +1218,72 @@ export const WritingView: React.FC<WritingViewProps> = ({
                       fontWeight: 700,
                     }}
                   >
-                    <span>⚠️ Falscher Anfangsbuchstabe (Groß-/Kleinschreibung)</span>
-                  </div>
+                    ⚠️ Falscher Anfangsbuchstabe
+                  </span>
                 )}
               </div>
-            </div>
-
-            <div 
-              style={{ 
-                padding: '0.4rem 0.9rem', 
-                borderRadius: 'var(--radius-full)', 
-                background: gradeResult.isCorrect ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                color: gradeResult.isCorrect ? 'var(--success)' : 'var(--warning)',
-                fontWeight: 700,
-                fontSize: '0.9rem',
-              }}
-            >
-              Note: {gradeResult.schoolGrade}
-            </div>
-          </div>
-
-          {/* WORD & TRANSLATION REVEAL */}
-          <div 
-            style={{ 
-              background: 'var(--bg-surface-elevated)', 
-              borderRadius: 'var(--radius-md)', 
-              padding: '1.5rem', 
-              border: '1px solid var(--border-subtle)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '1rem'
-            }}
-          >
-            <div>
-              <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
-                Vokabel ({language === 'en' ? 'Englisch' : 'Latein'})
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.02em' }}>
-                  {currentWord?.word}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => playWordAudio()}
-                  className="btn btn-secondary btn-sm"
-                  style={{ padding: '0.45rem 0.75rem', borderRadius: '50px' }}
-                  title="Aussprache anhören"
-                >
-                  <Volume2 size={16} />
-                  <span>Aussprache</span>
-                </button>
-                {currentWord?.phonetic && (
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.95rem', fontFamily: 'monospace' }}>
-                    [{currentWord.phonetic}]
+              <div style={{ fontSize: '0.85rem', color: gradeResult.isCorrect ? 'var(--success)' : 'var(--warning)', fontWeight: 600, marginTop: '0.15rem' }}>
+                {gradeResult.isCorrect ? 'Richtig geschrieben!' : 'Noch einmal üben'}
+                {gradeResult.capitalizationError && (
+                  <span style={{ color: '#fbbf24', marginLeft: '0.5rem' }}>
+                    (Wortanfang beachten: "{currentWord?.word}")
                   </span>
                 )}
               </div>
             </div>
-
-            <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '0.85rem' }}>
-              <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
-                Deutsche Übersetzung
-              </div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 600, color: 'var(--primary-light)' }}>
-                {currentWord?.translation}
-              </div>
-            </div>
-
-            {currentWord?.exampleSentence && (
-              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '0.85rem', fontSize: '0.9rem' }}>
-                <div style={{ color: 'var(--text-secondary)', fontStyle: 'italic', marginBottom: '0.2rem' }}>
-                  "{currentWord.exampleSentence}"
-                </div>
-                {currentWord.exampleTranslation && (
-                  <div style={{ color: 'var(--text-muted)' }}>
-                    "{currentWord.exampleTranslation}"
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
-          {/* GEMINI FEEDBACK & OCR COMPARISON */}
           <div 
             style={{ 
-              background: 'rgba(99, 102, 241, 0.08)', 
-              borderRadius: 'var(--radius-md)', 
-              padding: '1.25rem', 
-              border: '1px solid rgba(99, 102, 241, 0.2)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.75rem'
+              padding: '0.4rem 0.9rem', 
+              borderRadius: 'var(--radius-full)', 
+              background: gradeResult.isCorrect ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+              color: gradeResult.isCorrect ? 'var(--success)' : 'var(--warning)',
+              fontWeight: 700,
+              fontSize: '0.9rem',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary-light)', fontWeight: 700, fontSize: '0.95rem' }}>
-              <Sparkles size={16} />
-              <span>Gemini Lehrer-Feedback{gradeResult.model ? ` (${gradeResult.model})` : ''}:</span>
-            </div>
+            Note: {gradeResult.schoolGrade}
+          </div>
+        </div>
+      )}
 
-            <p style={{ color: 'var(--text-primary)', fontSize: '0.95rem', margin: 0, lineHeight: 1.5 }}>
-              {gradeResult.feedback}
-            </p>
-
-            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-              Aus deiner Handschrift erkannt: <strong style={{ color: '#ffffff' }}>"{gradeResult.recognizedWord}"</strong>
-              {gradeResult.capitalizationError && (
-                <span style={{ color: '#fbbf24', marginLeft: '0.5rem', fontWeight: 600 }}>
-                  (Wortanfang beachten: "{currentWord?.word}")
-                </span>
-              )}
-            </div>
-
-            {/* Student's Handwriting Thumbnail Preview */}
-            {userHandwritingSnapshot && (
-              <div style={{ marginTop: '0.5rem' }}>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-                  Deine Handschrift (Apple Pencil):
-                </div>
-                <div 
-                  style={{ 
-                    maxHeight: '120px', 
-                    borderRadius: 'var(--radius-sm)', 
-                    overflow: 'hidden', 
-                    border: '1px solid var(--border-medium)',
-                    display: 'inline-block',
-                    background: '#ffffff'
-                  }}
-                >
-                  <img 
-                    src={userHandwritingSnapshot} 
-                    alt="Deine Handschrift" 
-                    style={{ height: '110px', display: 'block', objectFit: 'contain' }} 
-                  />
-                </div>
-              </div>
-            )}
+      {/* 2. TEACHER FEEDBACK PANEL (image 1) WITH "NÄCHSTES WORT" BUTTON */}
+      {isSubmitted && gradeResult && (
+        <div 
+          className="glass-panel"
+          style={{ 
+            background: 'rgba(99, 102, 241, 0.08)', 
+            borderRadius: 'var(--radius-md)', 
+            padding: '1.35rem', 
+            border: '1px solid rgba(99, 102, 241, 0.25)',
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '0.85rem'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary-light)', fontWeight: 700, fontSize: '0.95rem' }}>
+            <Sparkles size={16} />
+            <span>Gemini Lehrer-Feedback{gradeResult.model ? ` (${gradeResult.model})` : ''}:</span>
           </div>
 
-          {/* NEXT WORD BUTTON */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+          <p style={{ color: 'var(--text-primary)', fontSize: '0.95rem', margin: 0, lineHeight: 1.55 }}>
+            {gradeResult.feedback}
+          </p>
+
+          {/* NEXT WORD BUTTON (lives inside this panel) */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.35rem' }}>
             <button
               type="button"
               onClick={handleNextWord}
               className="btn btn-primary"
               style={{
-                minWidth: '220px',
-                padding: '0.9rem 1.75rem',
+                minWidth: '200px',
+                padding: '0.85rem 1.75rem',
                 fontSize: '1.05rem',
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '0.6rem',
               }}
             >
@@ -1368,6 +1291,70 @@ export const WritingView: React.FC<WritingViewProps> = ({
               <ArrowRight size={18} />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* 3. WORD PANEL (image 2) */}
+      {isSubmitted && gradeResult && (
+        <div 
+          className="glass-panel"
+          style={{ 
+            background: 'var(--bg-surface-elevated)', 
+            borderRadius: 'var(--radius-md)', 
+            padding: '1.5rem', 
+            border: '1px solid var(--border-subtle)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1rem'
+          }}
+        >
+          <div>
+            <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+              Vokabel ({language === 'en' ? 'Englisch' : 'Latein'})
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '2.1rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.02em' }}>
+                {currentWord?.word}
+              </span>
+              <button
+                type="button"
+                onClick={() => playWordAudio()}
+                className="btn btn-secondary btn-sm"
+                style={{ padding: '0.45rem 0.75rem', borderRadius: '50px' }}
+                title="Aussprache anhören"
+              >
+                <Volume2 size={16} />
+                <span>Aussprache</span>
+              </button>
+              {currentWord?.phonetic && (
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.95rem', fontFamily: 'monospace' }}>
+                  [{currentWord.phonetic}]
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '0.85rem' }}>
+            <div style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+              Deutsche Übersetzung
+            </div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 600, color: 'var(--primary-light)' }}>
+              {currentWord?.translation}
+            </div>
+          </div>
+
+          {currentWord?.exampleSentence && (
+            <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '0.85rem', fontSize: '0.9rem' }}>
+              <div style={{ color: 'var(--text-secondary)', fontStyle: 'italic', marginBottom: '0.2rem' }}>
+                "{currentWord.exampleSentence}"
+              </div>
+              {currentWord.exampleTranslation && (
+                <div style={{ color: 'var(--text-muted)' }}>
+                  "{currentWord.exampleTranslation}"
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
