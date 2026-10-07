@@ -355,6 +355,40 @@ export const WritingView: React.FC<WritingViewProps> = ({
     setHasDrawn(false);
   };
 
+  // Global pointerup/pointercancel listeners on window to ensure pen lift is never missed
+  useEffect(() => {
+    const handleGlobalPointerUp = (e: PointerEvent) => {
+      if (activePointerIdRef.current === e.pointerId || e.pointerType === 'pen') {
+        isDrawingRef.current = false;
+        activePointerIdRef.current = null;
+        activePointerTypeRef.current = null;
+        lastPointRef.current = null;
+        setIsReverseTipDetected(false);
+      }
+    };
+
+    const handleGlobalPointerCancel = (e: PointerEvent) => {
+      if (activePointerIdRef.current === e.pointerId || e.pointerType === 'pen') {
+        if (activePointerTypeRef.current === 'touch') {
+          revertLastStroke();
+        }
+        isDrawingRef.current = false;
+        activePointerIdRef.current = null;
+        activePointerTypeRef.current = null;
+        lastPointRef.current = null;
+        setIsReverseTipDetected(false);
+      }
+    };
+
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('pointercancel', handleGlobalPointerCancel);
+
+    return () => {
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', handleGlobalPointerCancel);
+    };
+  }, []);
+
   // Pointer event handlers with palm rejection & stylus preemption
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (isSubmitted || isGrading) return;
@@ -377,12 +411,17 @@ export const WritingView: React.FC<WritingViewProps> = ({
         setIsStylusPreferred(true);
       }
 
-      // Preempt any active touch stroke that was triggered by the hand landing slightly before stylus tip
-      if (activePointerIdRef.current !== null && activePointerTypeRef.current === 'touch') {
-        revertLastStroke();
+      // Stylus has absolute preemption: if any previous stroke was active
+      // (whether a resting palm touch or a previous pen stroke whose pointerup was missed/delayed),
+      // cleanly reset so the new pen stroke is NEVER dropped or blocked!
+      if (activePointerIdRef.current !== null) {
+        if (activePointerTypeRef.current === 'touch') {
+          revertLastStroke();
+        }
         activePointerIdRef.current = null;
         activePointerTypeRef.current = null;
         isDrawingRef.current = false;
+        lastPointRef.current = null;
       }
     }
 
@@ -391,8 +430,8 @@ export const WritingView: React.FC<WritingViewProps> = ({
       return;
     }
 
-    // Only allow one drawing pointer at a time
-    if (activePointerIdRef.current !== null) {
+    // Only allow one drawing pointer at a time (for touch/mouse)
+    if (!isPen && activePointerIdRef.current !== null) {
       return;
     }
 
@@ -432,6 +471,17 @@ export const WritingView: React.FC<WritingViewProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // If pen is in hover mode or lifted (buttons === 0), release drawing state
+    if (e.pointerType === 'pen' && e.buttons === 0) {
+      if (isDrawingRef.current || activePointerIdRef.current !== null) {
+        isDrawingRef.current = false;
+        activePointerIdRef.current = null;
+        activePointerTypeRef.current = null;
+        lastPointRef.current = null;
+      }
+      return;
+    }
+
     // Only accept movements for the currently drawing pointer
     if (!isDrawingRef.current || activePointerIdRef.current !== e.pointerId || !lastPointRef.current) {
       return;
@@ -473,7 +523,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (activePointerIdRef.current === e.pointerId) {
+    if (activePointerIdRef.current === e.pointerId || e.pointerType === 'pen') {
       isDrawingRef.current = false;
       activePointerIdRef.current = null;
       activePointerTypeRef.current = null;
@@ -486,9 +536,11 @@ export const WritingView: React.FC<WritingViewProps> = ({
   };
 
   const handlePointerCancel = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (activePointerIdRef.current === e.pointerId) {
-      // Hardware palm detection or gesture cancelled this stroke: revert stray marks
-      revertLastStroke();
+    if (activePointerIdRef.current === e.pointerId || e.pointerType === 'pen') {
+      // Only revert stray touch marks (from resting hand), never actual pen writing!
+      if (activePointerTypeRef.current === 'touch') {
+        revertLastStroke();
+      }
 
       isDrawingRef.current = false;
       activePointerIdRef.current = null;
@@ -497,6 +549,16 @@ export const WritingView: React.FC<WritingViewProps> = ({
       try {
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch {}
+      setIsReverseTipDetected(false);
+    }
+  };
+
+  const handleLostPointerCapture = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (activePointerIdRef.current === e.pointerId || e.pointerType === 'pen') {
+      isDrawingRef.current = false;
+      activePointerIdRef.current = null;
+      activePointerTypeRef.current = null;
+      lastPointRef.current = null;
       setIsReverseTipDetected(false);
     }
   };
@@ -1018,6 +1080,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerCancel}
+              onLostPointerCapture={handleLostPointerCapture}
               style={{
                 width: '100%',
                 height: '100%',
