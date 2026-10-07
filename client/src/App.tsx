@@ -25,6 +25,7 @@ import { LearnerDashboard } from './components/learner/LearnerDashboard';
 import { StatsModal } from './components/learner/StatsModal';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { SettingsModal } from './components/admin/SettingsModal';
+import { APP_VERSION } from './version';
 
 export const App: React.FC = () => {
   const [words, setWords] = useState<WordItem[]>([]);
@@ -260,6 +261,19 @@ export const App: React.FC = () => {
         onResetToDefaults={handleResetToDefaults}
         currentLanguage={activeLanguage}
       />
+
+      {/* Release version tag in lower left corner */}
+      <aside className="release-version-tag" aria-label="Version">
+        <a
+          href={`https://github.com/peterfroehlich/quasselstrippe/releases/tag/${APP_VERSION}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`Quasselstrippe ${APP_VERSION} – Release-Informationen`}
+        >
+          <span className="release-version-dot" />
+          <span>{APP_VERSION}</span>
+        </a>
+      </aside>
     </div>
   );
 };
