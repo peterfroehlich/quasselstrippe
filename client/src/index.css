@@ -396,12 +396,11 @@ button, a, input, select, textarea, [role="button"], .speaker-btn, .flip-card-in
   display: none !important;
 }
 
-.desktop-only {
-  display: flex !important;
-}
-
 @media (max-width: 768px) {
   .mobile-only {
+    display: revert !important;
+  }
+  .mobile-only.app-header-row-bottom {
     display: flex !important;
   }
   .desktop-only {
@@ -424,10 +423,26 @@ button, a, input, select, textarea, [role="button"], .speaker-btn, .flip-card-in
 .app-header-inner {
   max-width: 1280px;
   margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.app-header-row-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  width: 100%;
+  gap: 1rem;
+}
+
+.app-header-row-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.5rem;
 }
 
 .header-brand-group {
@@ -435,6 +450,7 @@ button, a, input, select, textarea, [role="button"], .speaker-btn, .flip-card-in
   align-items: center;
   gap: 0.75rem;
   min-width: 0;
+  flex-shrink: 0;
 }
 
 .header-brand-logo {
@@ -468,6 +484,7 @@ button, a, input, select, textarea, [role="button"], .speaker-btn, .flip-card-in
   padding: 3px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border-medium);
+  flex-shrink: 0;
 }
 
 .header-actions-group {
@@ -477,6 +494,13 @@ button, a, input, select, textarea, [role="button"], .speaker-btn, .flip-card-in
   flex-shrink: 0;
 }
 
+/* Tablet refinement: hide subtitle if screen space is tight */
+@media (max-width: 900px) {
+  .header-brand-subtitle {
+    display: none !important;
+  }
+}
+
 /* Mobile Header: 2-Row Stack */
 @media (max-width: 768px) {
   .app-header {
@@ -484,24 +508,14 @@ button, a, input, select, textarea, [role="button"], .speaker-btn, .flip-card-in
   }
 
   .app-header-inner {
-    flex-direction: column;
-    align-items: stretch;
     gap: 0.5rem;
   }
 
   .app-header-row-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
     gap: 0.5rem;
   }
 
   .app-header-row-bottom {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
     gap: 0.5rem;
   }
 
