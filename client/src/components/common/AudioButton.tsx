@@ -11,6 +11,8 @@ interface AudioButtonProps {
   label?: string;
   className?: string;
   rate?: number;
+  style?: React.CSSProperties;
+  title?: string;
 }
 
 export const AudioButton: React.FC<AudioButtonProps> = ({
@@ -21,6 +23,8 @@ export const AudioButton: React.FC<AudioButtonProps> = ({
   label,
   className = '',
   rate = 0.88,
+  style,
+  title,
 }) => {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -83,7 +87,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({
   }
 
   const dimensionStyles = {
-    sm: { width: '38px', height: '38px', minWidth: '44px', minHeight: '44px' },
+    sm: { width: '34px', height: '34px', minWidth: '34px', minHeight: '34px' },
     md: { width: '44px', height: '44px', minWidth: '44px', minHeight: '44px' },
     lg: { width: '54px', height: '54px', minWidth: '54px', minHeight: '54px' },
   };
@@ -93,8 +97,8 @@ export const AudioButton: React.FC<AudioButtonProps> = ({
       type="button"
       onClick={handleClick}
       className={`speaker-btn ${isSpeaking ? 'is-speaking' : ''} ${className}`}
-      style={dimensionStyles[size]}
-      title={`Anhören (${language === 'en' ? 'Englisch' : 'Latein'})`}
+      style={{ ...dimensionStyles[size], ...style }}
+      title={title || `Anhören (${language === 'en' ? 'Englisch' : 'Latein'})`}
       aria-label={`Aussprache für ${text}`}
     >
       {icon}

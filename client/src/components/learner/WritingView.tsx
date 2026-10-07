@@ -13,7 +13,6 @@ import {
   XCircle, 
   ChevronRight,
   BookOpen,
-  VolumeX,
   Loader2,
   ShieldCheck,
   ShieldAlert
@@ -22,6 +21,7 @@ import confetti from 'canvas-confetti';
 import type { WordItem, Language, HandwritingGradeResponse } from '../../types/vocabulary';
 import { speechService } from '../../services/speech';
 import { gradeHandwriting } from '../../services/gemini';
+import { AudioButton } from '../common/AudioButton';
 
 interface WritingViewProps {
   words: WordItem[];
@@ -53,10 +53,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
   const [isReverseTipDetected, setIsReverseTipDetected] = useState(false);
   const [hasDrawn, setHasDrawn] = useState(false);
   
-  // Audio state
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [speechError, setSpeechError] = useState(false);
-
   // Grading & result state
   const [isGrading, setIsGrading] = useState(false);
   const [gradeResult, setGradeResult] = useState<HandwritingGradeResponse | null>(null);
@@ -178,15 +174,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
   const playWordAudio = useCallback((wordToSpeak?: string) => {
     const text = wordToSpeak || currentWord?.word;
     if (!text) return;
-    setIsSpeaking(true);
-    setSpeechError(false);
-    speechService.speak(text, language, {
-      onEnd: () => setIsSpeaking(false),
-      onError: () => {
-        setIsSpeaking(false);
-        setSpeechError(true);
-      }
-    });
+    speechService.speak(text, language);
   }, [currentWord?.word, language]);
 
   useEffect(() => {
@@ -902,55 +890,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
         />
       </div>
 
-      {/* AUDIO / LISTEN PROMPT CARD (Word is kept strictly HIDDEN!) */}
-      <div 
-        className="glass-panel" 
-        style={{ 
-          padding: '1.5rem', 
-          textAlign: 'center',
-          border: '1px solid var(--border-medium)',
-          position: 'relative',
-          overflow: 'hidden'
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
-          <button
-            type="button"
-            onClick={() => playWordAudio()}
-            className="btn btn-primary"
-            style={{
-              borderRadius: '50px',
-              padding: '0.85rem 1.75rem',
-              fontSize: '1.05rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              transform: isSpeaking ? 'scale(1.04)' : 'none',
-              boxShadow: isSpeaking ? '0 0 25px rgba(99, 102, 241, 0.7)' : '0 4px 14px rgba(99, 102, 241, 0.4)',
-              transition: 'all 0.2s ease',
-            }}
-            title="Wort erneut anhören"
-          >
-            {speechError ? <VolumeX size={22} /> : <Volume2 size={22} className={isSpeaking ? 'pulse-anim' : ''} />}
-            <span>{isSpeaking ? 'Wort wird vorgelesen...' : 'Nochmal anhören 🔊'}</span>
-          </button>
-
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: '0.2rem 0 0' }}>
-            Das Wort ist verborgen. Höre gut zu und schreibe es mit deinem <strong>Apple Pencil</strong> in das Schreibfeld!
-          </p>
-
-          {/* Letter count hint to help student */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '0.2rem' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', letterSpacing: '0.15em', fontFamily: 'monospace' }}>
-              {currentWord?.word ? currentWord.word.split('').map(c => c === ' ' ? '  ' : '_').join(' ') : ''}
-            </span>
-            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              ({currentWord?.word.replace(/\s+/g, '').length} Buchstaben)
-            </span>
-          </div>
-        </div>
-      </div>
-
       {/* APPLE PENCIL WRITING CANVAS AREA */}
       {!isSubmitted && (
         <div 
@@ -1051,6 +990,15 @@ export const WritingView: React.FC<WritingViewProps> = ({
                 <Trash2 size={15} />
                 <span>Leeren</span>
               </button>
+
+              {currentWord && (
+                <AudioButton
+                  text={currentWord.word}
+                  language={language}
+                  size="sm"
+                  title="Wort anhören 🔊"
+                />
+              )}
             </div>
           </div>
 
@@ -1104,6 +1052,11 @@ export const WritingView: React.FC<WritingViewProps> = ({
                 }}
               >
                 Hier mit dem Apple Pencil schreiben... ✏️
+                {currentWord && (
+                  <span style={{ fontSize: '0.9rem', marginLeft: '0.6rem', color: '#64748b', fontStyle: 'normal' }}>
+                    ({currentWord.word.replace(/\s+/g, '').length} Buchstaben)
+                  </span>
+                )}
                 {isStylusPreferred && (
                   <span style={{ fontSize: '0.85rem', marginLeft: '0.5rem', opacity: 0.85, color: '#059669', fontStyle: 'normal' }}>
                     (Handballenschutz aktiv 🛡️)
