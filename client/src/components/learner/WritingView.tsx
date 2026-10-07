@@ -14,7 +14,9 @@ import {
   ChevronRight,
   BookOpen,
   VolumeX,
-  Loader2
+  Loader2,
+  ShieldCheck,
+  ShieldAlert
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { WordItem, Language, HandwritingGradeResponse } from '../../types/vocabulary';
@@ -74,6 +76,20 @@ export const WritingView: React.FC<WritingViewProps> = ({
   const activeToolRef = useRef<'pen' | 'eraser'>('pen');
   activeToolRef.current = activeTool;
 
+  // Palm rejection & pointer isolation state
+  const activePointerIdRef = useRef<number | null>(null);
+  const activePointerTypeRef = useRef<string | null>(null);
+  const hasDetectedPenRef = useRef<boolean>(false);
+  const lastPenTimeRef = useRef<number>(0);
+  const [isStylusPreferred, setIsStylusPreferred] = useState<boolean>(() => {
+    // If device is touch-capable or iPad, activate palm protection by default
+    return typeof navigator !== 'undefined' && (
+      navigator.maxTouchPoints > 0 || /iPad|Macintosh/i.test(navigator.userAgent)
+    );
+  });
+  const isStylusPreferredRef = useRef(isStylusPreferred);
+  isStylusPreferredRef.current = isStylusPreferred;
+
   const currentWord = sessionWords[currentIndex];
 
   // Sync words on external change
@@ -98,6 +114,10 @@ export const WritingView: React.FC<WritingViewProps> = ({
     setActiveTool('pen');
     setIsReverseTipDetected(false);
     historyRef.current = [];
+    activePointerIdRef.current = null;
+    activePointerTypeRef.current = null;
+    isDrawingRef.current = false;
+    lastPointRef.current = null;
 
     // Clear canvas
     const canvas = canvasRef.current;
@@ -161,6 +181,44 @@ export const WritingView: React.FC<WritingViewProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, [initCanvas]);
 
+  // Check if pointer is likely a resting palm/hand rather than deliberate drawing
+  const isLikelyPalmTouch = (e: React.PointerEvent<HTMLCanvasElement>): boolean => {
+    // Stylus and mouse inputs are always intentional
+    if (e.pointerType === 'pen' || e.pointerType === 'mouse') {
+      return false;
+    }
+
+    // In stylus-preferred mode, all touch inputs are treated as palm sitting on display
+    if (isStylusPreferredRef.current) {
+      return true;
+    }
+
+    // If an Apple Pencil was used recently (within 20 seconds), treat touch as resting hand
+    const now = Date.now();
+    if (hasDetectedPenRef.current && now - lastPenTimeRef.current < 20000) {
+      return true;
+    }
+
+    // Reject secondary touches in multi-touch contacts
+    if (!e.isPrimary) {
+      return true;
+    }
+
+    // Palm contact geometry detection: broad contact patch on display
+    const width = e.width || 0;
+    const height = e.height || 0;
+    if (width > 32 || height > 32 || (width > 0 && height > 0 && width * height > 800)) {
+      return true;
+    }
+
+    const native = e.nativeEvent as any;
+    if (native && (native.radiusX > 20 || native.radiusY > 20)) {
+      return true;
+    }
+
+    return false;
+  };
+
   // Helper to determine if pointer is currently eraser (reverse tip or UI tool)
   const checkIsEraser = (e: React.PointerEvent<HTMLCanvasElement>) => {
     // Reverse tip on Apple Pencil / stylus or eraser button
@@ -187,18 +245,39 @@ export const WritingView: React.FC<WritingViewProps> = ({
   };
 
   // Save state for Undo
-  const saveUndoSnapshot = () => {
+  const saveUndoSnapshot = (): ImageData | null => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return null;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) return null;
     try {
       const snap = ctx.getImageData(0, 0, canvas.width, canvas.height);
       historyRef.current.push(snap);
       if (historyRef.current.length > 20) {
         historyRef.current.shift();
       }
-    } catch {}
+      return snap;
+    } catch {
+      return null;
+    }
+  };
+
+  // Revert last stroke (used when a palm touch is cancelled or preempted by pen)
+  const revertLastStroke = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    if (historyRef.current.length > 0) {
+      const lastSnap = historyRef.current.pop();
+      if (lastSnap) {
+        ctx.putImageData(lastSnap, 0, 0);
+      }
+      if (historyRef.current.length === 0) {
+        setHasDrawn(false);
+      }
+    }
   };
 
   const handleUndo = () => {
@@ -231,11 +310,42 @@ export const WritingView: React.FC<WritingViewProps> = ({
     setHasDrawn(false);
   };
 
-  // Pointer event handlers
+  // Pointer event handlers with palm rejection & stylus preemption
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (isSubmitted || isGrading) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    const isPen = e.pointerType === 'pen';
+
+    if (isPen) {
+      hasDetectedPenRef.current = true;
+      lastPenTimeRef.current = Date.now();
+      if (!isStylusPreferredRef.current) {
+        setIsStylusPreferred(true);
+      }
+
+      // Preempt any active touch stroke that was triggered by the hand landing slightly before stylus tip
+      if (activePointerIdRef.current !== null && activePointerTypeRef.current === 'touch') {
+        revertLastStroke();
+        activePointerIdRef.current = null;
+        activePointerTypeRef.current = null;
+        isDrawingRef.current = false;
+      }
+    }
+
+    // Palm rejection check for touch events
+    if (isLikelyPalmTouch(e)) {
+      return;
+    }
+
+    // Only allow one drawing pointer at a time
+    if (activePointerIdRef.current !== null) {
+      return;
+    }
+
+    activePointerIdRef.current = e.pointerId;
+    activePointerTypeRef.current = e.pointerType;
 
     try {
       canvas.setPointerCapture(e.pointerId);
@@ -270,7 +380,15 @@ export const WritingView: React.FC<WritingViewProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawingRef.current || !lastPointRef.current) return;
+    // Only accept movements for the currently drawing pointer
+    if (!isDrawingRef.current || activePointerIdRef.current !== e.pointerId || !lastPointRef.current) {
+      return;
+    }
+
+    if (e.pointerType === 'pen') {
+      lastPenTimeRef.current = Date.now();
+    }
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -303,12 +421,32 @@ export const WritingView: React.FC<WritingViewProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    isDrawingRef.current = false;
-    lastPointRef.current = null;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {}
-    setIsReverseTipDetected(false);
+    if (activePointerIdRef.current === e.pointerId) {
+      isDrawingRef.current = false;
+      activePointerIdRef.current = null;
+      activePointerTypeRef.current = null;
+      lastPointRef.current = null;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {}
+      setIsReverseTipDetected(false);
+    }
+  };
+
+  const handlePointerCancel = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (activePointerIdRef.current === e.pointerId) {
+      // Hardware palm detection or gesture cancelled this stroke: revert stray marks
+      revertLastStroke();
+
+      isDrawingRef.current = false;
+      activePointerIdRef.current = null;
+      activePointerTypeRef.current = null;
+      lastPointRef.current = null;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {}
+      setIsReverseTipDetected(false);
+    }
   };
 
   // Convert canvas to white-background JPEG base64 cropped to handwriting bounding box
@@ -711,6 +849,27 @@ export const WritingView: React.FC<WritingViewProps> = ({
                 <span>Radierer</span>
               </button>
 
+              {/* Palm Rejection / Stylus Protection Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsStylusPreferred(prev => !prev)}
+                className={`btn btn-sm ${isStylusPreferred ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ 
+                  padding: '0.45rem 0.85rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  fontSize: '0.82rem',
+                  ...(isStylusPreferred ? { background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', borderColor: 'rgba(16, 185, 129, 0.4)' } : {})
+                }}
+                title={isStylusPreferred 
+                  ? "Handballenschutz aktiv: Nur der Apple Pencil zeichnet. Die Hand kann auf dem Bildschirm abgelegt werden." 
+                  : "Handballenschutz aus: Auch Finger zeichnen. Klicken, um Handablage-Schutz zu aktivieren."}
+              >
+                {isStylusPreferred ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
+                <span>{isStylusPreferred ? 'Handballenschutz' : 'Finger erlaubt'}</span>
+              </button>
+
               {isReverseTipDetected && (
                 <span 
                   style={{ 
@@ -781,7 +940,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
               onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
               style={{
                 width: '100%',
                 height: '100%',
@@ -805,6 +964,11 @@ export const WritingView: React.FC<WritingViewProps> = ({
                 }}
               >
                 Hier mit dem Apple Pencil schreiben... ✏️
+                {isStylusPreferred && (
+                  <span style={{ fontSize: '0.85rem', marginLeft: '0.5rem', opacity: 0.85, color: '#059669', fontStyle: 'normal' }}>
+                    (Handballenschutz aktiv 🛡️)
+                  </span>
+                )}
               </div>
             )}
           </div>
