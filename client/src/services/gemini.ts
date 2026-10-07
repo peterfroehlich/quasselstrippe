@@ -207,7 +207,7 @@ export async function analyzeWorksheetWithGemini(
   }
 
   const targetLangName = language === 'en' ? 'Englisch' : 'Latein';
-  
+
   const systemPrompt = `Du bist ein erfahrener Fremdsprachenlehrer und Vokabeldidaktiker für deutsche Schüler.
 Deine Aufgabe ist es, dieses Foto eines Schul-Arbeitsblatts oder einer Schulbuchseite zu analysieren.
 Zielgruppe: Ein deutscher Schüler, der ${targetLangName} lernt.
@@ -241,10 +241,9 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 
   const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
   const models = [
+    'gemini-3.5-flash-lite',
     'gemini-3.8-flash',
     'gemini-3.5-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-2.5-flash',
   ];
   let lastError: Error | null = null;
 
