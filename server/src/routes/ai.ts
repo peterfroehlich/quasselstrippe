@@ -57,9 +57,8 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
     const models = [
-      'gemini-3.8-flash',
-      'gemini-3.5-flash',
       'gemini-3.5-flash-lite',
+      'gemini-3.5-flash',
       'gemini-2.5-flash',
     ];
     let lastError: Error | null = null;
@@ -205,10 +204,10 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
     const models = [
-      'gemini-3.8-flash',
-      'gemini-3.5-flash',
       'gemini-3.5-flash-lite',
+      'gemini-3.5-flash',
       'gemini-2.5-flash',
+      'gemini-2.0-flash',
     ];
     let lastError: Error | null = null;
     let resultData: HandwritingGradeResponse | null = null;
@@ -217,7 +216,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
       try {
         const genConfig: Record<string, any> = {
           temperature: 0.1,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 350,
           responseMimeType: 'application/json',
         };
 
@@ -234,7 +233,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              signal: AbortSignal.timeout(15000),
+              signal: AbortSignal.timeout(7000),
               body: JSON.stringify({
                 contents: [
                   {
