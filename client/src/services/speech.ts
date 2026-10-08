@@ -1,6 +1,8 @@
 import type { Language } from '../types/vocabulary';
 
 class SpeechService {
+  private rate = 1;
+  public setRate(rate: number): void { this.rate = rate; }
   private synth: SpeechSynthesis | null = null;
   private activeAudioElement: HTMLAudioElement | null = null;
 
@@ -45,7 +47,7 @@ class SpeechService {
     const utterance = new SpeechSynthesisUtterance(text);
 
     // Rate: 0.88 default for clear school learning
-    utterance.rate = options?.rate ?? 0.88;
+    utterance.rate = options?.rate ?? this.rate;
     utterance.pitch = options?.pitch ?? 1.0;
 
     const voices = this.synth.getVoices();

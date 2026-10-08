@@ -12,6 +12,10 @@ import type {
   DifficultWordItem,
 } from '../types.js';
 
+import { randomUUID } from 'node:crypto';
+import { nextReviewState } from '../learning.js';
+import { validateWord } from '../validation.js';
+
 import { INITIAL_WORDS, DEFAULT_SETTINGS } from './seed.js';
 
 interface WordRow {
@@ -43,6 +47,16 @@ interface ProfileRow {
 }
 
 let dbInstance: DatabaseSync | null = null;
+let transactionDepth = 0;
+export function transaction<T>(work: () => T): T {
+  const db = getDatabase();
+  if (transactionDepth) return work();
+  db.exec('BEGIN IMMEDIATE');
+  transactionDepth++;
+  try { const value = work(); db.exec('COMMIT'); return value; }
+  catch (error) { db.exec('ROLLBACK'); throw error; }
+  finally { transactionDepth--; }
+}
 
 export function getDatabase(): DatabaseSync {
   if (dbInstance) {
@@ -61,6 +75,9 @@ export function getDatabase(): DatabaseSync {
 
   // Initialize schema
   db.exec(`
+    CREATE TABLE IF NOT EXISTS operation_receipts (
+      id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, response TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS words (
       id TEXT PRIMARY KEY,
       word TEXT NOT NULL,
@@ -197,10 +214,10 @@ function initSeedsIfEmpty(db: DatabaseSync): void {
         w.exampleTranslation ?? null,
         w.phonetic ?? null,
         w.notes ?? null,
-        w.box,
-        w.correctCount,
-        w.incorrectCount,
-        w.lastReviewedAt ?? null,
+        1,
+        0,
+        0,
+        null,
         w.createdAt
       );
     }
@@ -298,10 +315,10 @@ export function getAllWords(language?: string, profileId?: string): WordItem[] {
     SELECT 
       w.id, w.word, w.translation, w.language, w.lesson, w.part_of_speech,
       w.example_sentence, w.example_translation, w.phonetic, w.notes,
-      ${profileId ? 'COALESCE(lp.box, w.box, 1)' : 'w.box'} AS box,
-      ${profileId ? 'COALESCE(lp.correct_count, w.correct_count, 0)' : 'w.correct_count'} AS correct_count,
-      ${profileId ? 'COALESCE(lp.incorrect_count, w.incorrect_count, 0)' : 'w.incorrect_count'} AS incorrect_count,
-      ${profileId ? 'COALESCE(lp.last_reviewed_at, w.last_reviewed_at)' : 'w.last_reviewed_at'} AS last_reviewed_at,
+      ${profileId ? 'COALESCE(lp.box, 1)' : 'w.box'} AS box,
+      ${profileId ? 'COALESCE(lp.correct_count, 0)' : 'w.correct_count'} AS correct_count,
+      ${profileId ? 'COALESCE(lp.incorrect_count, 0)' : 'w.incorrect_count'} AS incorrect_count,
+      ${profileId ? 'lp.last_reviewed_at' : 'w.last_reviewed_at'} AS last_reviewed_at,
       w.created_at,
       w.profile_id
     FROM words w
@@ -339,24 +356,26 @@ export function getWordById(id: string, profileId?: string): WordItem | null {
     SELECT 
       w.id, w.word, w.translation, w.language, w.lesson, w.part_of_speech,
       w.example_sentence, w.example_translation, w.phonetic, w.notes,
-      ${profileId ? 'COALESCE(lp.box, w.box, 1)' : 'w.box'} AS box,
-      ${profileId ? 'COALESCE(lp.correct_count, w.correct_count, 0)' : 'w.correct_count'} AS correct_count,
-      ${profileId ? 'COALESCE(lp.incorrect_count, w.incorrect_count, 0)' : 'w.incorrect_count'} AS incorrect_count,
-      ${profileId ? 'COALESCE(lp.last_reviewed_at, w.last_reviewed_at)' : 'w.last_reviewed_at'} AS last_reviewed_at,
+      ${profileId ? 'COALESCE(lp.box, 1)' : 'w.box'} AS box,
+      ${profileId ? 'COALESCE(lp.correct_count, 0)' : 'w.correct_count'} AS correct_count,
+      ${profileId ? 'COALESCE(lp.incorrect_count, 0)' : 'w.incorrect_count'} AS incorrect_count,
+      ${profileId ? 'lp.last_reviewed_at' : 'w.last_reviewed_at'} AS last_reviewed_at,
       w.created_at,
       w.profile_id
     FROM words w
     ${profileId ? 'LEFT JOIN learner_progress lp ON w.id = lp.word_id AND lp.profile_id = ?' : ''}
-    WHERE w.id = ?
+    WHERE w.id = ? ${profileId ? 'AND (w.profile_id IS NULL OR w.profile_id = ?)' : ''}
   `;
 
-  const params: (string | number | null)[] = profileId ? [profileId, id] : [id];
+  const params: (string | number | null)[] = profileId ? [profileId, id, profileId] : [id];
   const row = db.prepare(query).get(...params) as unknown as WordRow | undefined;
   if (!row) return null;
   return rowToWord(row);
 }
 
 export function insertWord(word: WordItem): WordItem {
+  word = validateWord(word);
+  if (word.profileId && !getProfileById(word.profileId)) throw new Error('Unknown profile');
   const db = getDatabase();
   const stmt = db.prepare(`
     INSERT INTO words (
@@ -377,10 +396,10 @@ export function insertWord(word: WordItem): WordItem {
     word.exampleTranslation ?? null,
     word.phonetic ?? null,
     word.notes ?? null,
-    word.box ?? 1,
-    word.correctCount ?? 0,
-    word.incorrectCount ?? 0,
-    word.lastReviewedAt ?? null,
+    1,
+    0,
+    0,
+    null,
     word.createdAt ?? Date.now(),
     word.profileId ?? null
   );
@@ -389,42 +408,21 @@ export function insertWord(word: WordItem): WordItem {
 }
 
 export function insertWords(words: WordItem[]): WordItem[] {
-  const db = getDatabase();
-  const stmt = db.prepare(`
-    INSERT OR REPLACE INTO words (
-      id, word, translation, language, lesson, part_of_speech,
-      example_sentence, example_translation, phonetic, notes,
-      box, correct_count, incorrect_count, last_reviewed_at, created_at, profile_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const inserted: WordItem[] = [];
-  for (const word of words) {
-    stmt.run(
-      word.id,
-      word.word,
-      word.translation,
-      word.language,
-      word.lesson,
-      word.partOfSpeech,
-      word.exampleSentence ?? null,
-      word.exampleTranslation ?? null,
-      word.phonetic ?? null,
-      word.notes ?? null,
-      word.box ?? 1,
-      word.correctCount ?? 0,
-      word.incorrectCount ?? 0,
-      word.lastReviewedAt ?? null,
-      word.createdAt ?? Date.now(),
-      word.profileId ?? null
-    );
-    inserted.push(getWordById(word.id, word.profileId ?? undefined)!);
-  }
-
-  return inserted;
+  const valid = words.map(validateWord);
+  const ids = new Set(valid.map(w => w.id));
+  if (ids.size !== valid.length) throw new Error('Duplicate word IDs in batch');
+  return transaction(() => valid.map(word => {
+    const existing = getWordById(word.id);
+    // An upsert updates vocabulary content, never replaces the row or learner progress.
+    return existing ? updateWord({ ...word, box: existing.box,
+      correctCount: existing.correctCount, incorrectCount: existing.incorrectCount,
+      lastReviewedAt: existing.lastReviewedAt, createdAt: existing.createdAt })! : insertWord(word);
+  }));
 }
 
 export function updateWord(word: WordItem): WordItem | null {
+  word = validateWord(word);
+  if (word.profileId && !getProfileById(word.profileId)) throw new Error('Unknown profile');
   const db = getDatabase();
   const stmt = db.prepare(`
     UPDATE words SET
@@ -467,7 +465,8 @@ export function updateWord(word: WordItem): WordItem | null {
   return getWordById(word.id, word.profileId ?? undefined);
 }
 
-export function deleteWord(id: string): boolean {
+export function deleteWord(id: string, profileId?: string): boolean {
+  if (profileId && !getWordById(id, profileId)) return false;
   const db = getDatabase();
   db.prepare('DELETE FROM learner_progress WHERE word_id = ?').run(id);
   const stmt = db.prepare('DELETE FROM words WHERE id = ?');
@@ -475,7 +474,7 @@ export function deleteWord(id: string): boolean {
   return result.changes > 0;
 }
 
-export function deleteWordsByLesson(lesson: string, language?: string, profileId?: string): number {
+export function deleteWordsByLesson(lesson: string, language: string | undefined, profileId: string | null): number {
   const db = getDatabase();
   let query = 'DELETE FROM words WHERE lesson = ?';
   const params: (string | number | null)[] = [lesson];
@@ -485,162 +484,57 @@ export function deleteWordsByLesson(lesson: string, language?: string, profileId
     params.push(language);
   }
 
-  if (profileId) {
-    query += ' AND profile_id = ?';
-    params.push(profileId);
-  }
+  if (profileId === null) { query += ' AND profile_id IS NULL'; }
+  else { query += ' AND profile_id = ?'; params.push(profileId); }
 
   const stmt = db.prepare(query);
   const result = stmt.run(...params);
   return Number(result.changes);
 }
 
-export function recordReview(id: string, wasCorrect: boolean, profileId?: string): WordItem | null {
-  const db = getDatabase();
-  const existing = getWordById(id, profileId);
-  if (!existing) return null;
-
-  let nextBox = existing.box;
-  if (wasCorrect) {
-    nextBox = Math.min(5, existing.box + 1);
-  } else {
-    nextBox = Math.max(1, existing.box - 1);
-  }
-
-  const nextCorrect = existing.correctCount + (wasCorrect ? 1 : 0);
-  const nextIncorrect = existing.incorrectCount + (wasCorrect ? 0 : 1);
-  const now = Date.now();
-
-  const pId = profileId || 'default';
-  const logStmt = db.prepare(`
-    INSERT INTO review_logs (id, profile_id, word_id, language, was_correct, box_before, box_after, reviewed_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  logStmt.run(
-    `log-${now}-${Math.random().toString(36).substring(2, 8)}`,
-    pId,
-    id,
-    existing.language,
-    wasCorrect ? 1 : 0,
-    existing.box,
-    nextBox,
-    now
-  );
-
-  if (profileId) {
-    const stmt = db.prepare(`
-      INSERT INTO learner_progress (profile_id, word_id, box, correct_count, incorrect_count, last_reviewed_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(profile_id, word_id) DO UPDATE SET
-        box = excluded.box,
-        correct_count = excluded.correct_count,
-        incorrect_count = excluded.incorrect_count,
-        last_reviewed_at = excluded.last_reviewed_at
-    `);
-    stmt.run(profileId, id, nextBox, nextCorrect, nextIncorrect, now);
+export function recordReview(id: string, wasCorrect: boolean, profileId: string,
+  eventId: string = randomUUID(), reviewedAt = Date.now(), promote = true): WordItem | null {
+  if (!getProfileById(profileId)) throw new Error('Unknown profile');
+  return transaction(() => {
+    const db = getDatabase();
+    const existing = getWordById(id, profileId);
+    if (!existing) return null;
+    const duplicate = db.prepare('SELECT profile_id, word_id FROM review_logs WHERE id = ?').get(eventId);
+    if (duplicate) {
+      if (duplicate.profile_id !== profileId || duplicate.word_id !== id) throw new Error('Review ID conflict');
+      return existing;
+    }
+    const next = nextReviewState(existing, wasCorrect, reviewedAt, promote);
+    db.prepare(`INSERT INTO learner_progress (profile_id, word_id, box, correct_count, incorrect_count, last_reviewed_at)
+      VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(profile_id, word_id) DO UPDATE SET
+      box = excluded.box, correct_count = excluded.correct_count,
+      incorrect_count = excluded.incorrect_count, last_reviewed_at = excluded.last_reviewed_at`)
+      .run(profileId, id, next.box, next.correctCount, next.incorrectCount, next.lastReviewedAt ?? null);
+    db.prepare(`INSERT INTO review_logs (id, profile_id, word_id, language, was_correct, box_before, box_after, reviewed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(eventId, profileId, id, existing.language,
+      wasCorrect ? 1 : 0, existing.box, next.box, reviewedAt);
     return getWordById(id, profileId);
-  } else {
-    const updated: WordItem = {
-      ...existing,
-      box: nextBox,
-      correctCount: nextCorrect,
-      incorrectCount: nextIncorrect,
-      lastReviewedAt: now,
-    };
-    return updateWord(updated);
-  }
+  });
 }
 
-export function resetReviewProgress(profileId?: string): WordItem[] {
-  const db = getDatabase();
-  if (profileId) {
+export function resetReviewProgress(profileId: string): WordItem[] {
+  if (!getProfileById(profileId)) throw new Error('Unknown profile');
+  return transaction(() => {
+    const db = getDatabase();
     db.prepare('DELETE FROM learner_progress WHERE profile_id = ?').run(profileId);
     db.prepare('DELETE FROM review_logs WHERE profile_id = ?').run(profileId);
     return getAllWords(undefined, profileId);
-  } else {
-    db.exec(`
-      UPDATE words SET
-        box = 1,
-        correct_count = 0,
-        incorrect_count = 0,
-        last_reviewed_at = NULL
-    `);
-    db.exec('DELETE FROM learner_progress');
-    db.exec('DELETE FROM review_logs');
-    return getAllWords();
-  }
+  });
 }
 
 export function resetToDefaults(): WordItem[] {
-  const db = getDatabase();
-  db.exec('DELETE FROM words');
-  db.exec('DELETE FROM learner_progress');
-  db.exec('DELETE FROM review_logs');
-
-  const insert = db.prepare(`
-    INSERT INTO words (
-      id, word, translation, language, lesson, part_of_speech,
-      example_sentence, example_translation, phonetic, notes,
-      box, correct_count, incorrect_count, last_reviewed_at, created_at, profile_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-  `);
-
-  for (const w of INITIAL_WORDS) {
-    insert.run(
-      w.id,
-      w.word,
-      w.translation,
-      w.language,
-      w.lesson,
-      w.partOfSpeech,
-      w.exampleSentence ?? null,
-      w.exampleTranslation ?? null,
-      w.phonetic ?? null,
-      w.notes ?? null,
-      w.box,
-      w.correctCount,
-      w.incorrectCount,
-      w.lastReviewedAt ?? null,
-      w.createdAt
-    );
-  }
-
-  // Reseed progress for default profile
-  db.exec(`
-    INSERT OR IGNORE INTO learner_progress (profile_id, word_id, box, correct_count, incorrect_count, last_reviewed_at)
-    SELECT 'default', id, box, correct_count, incorrect_count, last_reviewed_at FROM words;
-  `);
-
-  // Reseed review logs if empty
-  const countLogs = (db.prepare('SELECT COUNT(*) as c FROM review_logs').get() as { c: number }).c;
-  if (countLogs === 0) {
-    const wordsWithReviews = db.prepare('SELECT * FROM words WHERE correct_count > 0 OR incorrect_count > 0').all() as unknown as WordRow[];
-    const now = Date.now();
-    const insertLog = db.prepare(`
-      INSERT INTO review_logs (id, profile_id, word_id, language, was_correct, box_before, box_after, reviewed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const w of wordsWithReviews) {
-      const totalR = w.correct_count + w.incorrect_count;
-      for (let i = 0; i < totalR; i++) {
-        const wasCorrect = i < w.correct_count ? 1 : 0;
-        const daysAgo = Math.floor(Math.random() * 8) + 1;
-        const timestamp = now - daysAgo * 86400000 + Math.floor(Math.random() * 3600000);
-        insertLog.run(
-          `seed-log-${w.id}-${i}`,
-          'default',
-          w.id,
-          w.language,
-          wasCorrect,
-          Math.max(1, w.box - 1),
-          w.box,
-          timestamp
-        );
-      }
-    }
-  }
-
-  return getAllWords();
+  return transaction(() => {
+    const db = getDatabase();
+    db.exec('DELETE FROM words; DELETE FROM review_logs;');
+    insertWords(INITIAL_WORDS.map(w => ({ ...w, box: 1, correctCount: 0,
+      incorrectCount: 0, lastReviewedAt: undefined, profileId: null })));
+    return getAllWords();
+  });
 }
 
 export function getLearnerStats(profileId: string, language?: Language): LearnerStats {
@@ -722,8 +616,7 @@ export function getLearnerStats(profileId: string, language?: Language): Learner
 
     if (i === 0) {
       masteredCount = Math.max(masteredCount, masteredWords);
-    } else if (masteredCount > masteredWords) {
-      masteredCount = masteredWords;
+
     }
 
     const yyyy = dayDate.getFullYear();

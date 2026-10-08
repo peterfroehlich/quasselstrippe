@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Camera, List, Users } from 'lucide-react';
 import type { WordItem, Language, UserProfile } from '../../types/vocabulary';
 import { WorksheetScanner } from './WorksheetScanner';
@@ -9,6 +9,7 @@ interface AdminDashboardProps {
   words: WordItem[];
   language: Language;
   geminiApiKey: string;
+  aiAvailable?: boolean;
   profiles: UserProfile[];
   activeProfile: UserProfile | null;
   initialTab?: 'scanner' | 'words' | 'profiles';
@@ -16,13 +17,13 @@ interface AdminDashboardProps {
   onCreateProfile: (profile: { name: string; avatar: string; color: string }) => Promise<void>;
   onUpdateProfile: (profile: UserProfile) => Promise<void>;
   onDeleteProfile: (id: string) => Promise<void>;
-  onAddWords: (newWords: WordItem[]) => void;
-  onAddWord: (word: WordItem) => void;
-  onUpdateWord: (word: WordItem) => void;
-  onDeleteWord: (id: string) => void;
-  onDeleteLesson: (lesson: string) => void;
-  onImportWords: (words: WordItem[]) => void;
-  onResetProgress: () => void;
+  onAddWords: (newWords: WordItem[]) => Promise<void>;
+  onAddWord: (word: WordItem) => Promise<void>;
+  onUpdateWord: (word: WordItem) => Promise<void>;
+  onDeleteWord: (id: string) => Promise<void>;
+  onDeleteLesson: (lesson: string, scope?: string) => Promise<void>;
+  onImportWords: (words: WordItem[]) => Promise<void>;
+  onResetProgress: () => Promise<void>;
   onOpenSettings: () => void;
 }
 
@@ -30,6 +31,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   words,
   language,
   geminiApiKey,
+  aiAvailable,
   profiles,
   activeProfile,
   initialTab = 'scanner',
@@ -48,11 +50,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'scanner' | 'words' | 'profiles'>(initialTab);
 
-  useEffect(() => {
-    if (initialTab) {
-      setActiveTab(initialTab);
-    }
-  }, [initialTab]);
 
   return (
     <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '1.25rem 0.85rem calc(3rem + env(safe-area-inset-bottom, 0px)) 0.85rem' }}>
@@ -113,8 +110,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <WorksheetScanner
           language={language}
           geminiApiKey={geminiApiKey}
-          onAddWords={(newWords) => {
-            onAddWords(newWords);
+          aiAvailable={aiAvailable}
+          onAddWords={async (newWords) => {
+            await onAddWords(newWords);
           }}
           onOpenSettings={onOpenSettings}
         />

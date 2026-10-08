@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Volume2, 
   RotateCcw, 
@@ -27,7 +27,8 @@ interface WritingViewProps {
   words: WordItem[];
   allWords: WordItem[];
   language: Language;
-  onRecordReview: (wordId: string, wasCorrect: boolean) => void;
+  autoPlayAudio?: boolean;
+  onRecordReview: (wordId: string, wasCorrect: boolean, promote?: boolean) => Promise<void>;
   onRestart: () => void;
   apiKey?: string;
   selectedLesson?: string;
@@ -38,6 +39,7 @@ interface WritingViewProps {
 export const WritingView: React.FC<WritingViewProps> = ({
   words,
   language,
+  autoPlayAudio = true,
   onRecordReview,
   onRestart,
   apiKey,
@@ -45,7 +47,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
   availableLessons = [],
   onSelectLesson,
 }) => {
-  const [sessionWords, setSessionWords] = useState<WordItem[]>(() => [...words]);
+  const [sessionWords] = useState<WordItem[]>(() => [...words]);
   const [currentIndex, setCurrentIndex] = useState(0);
   
   // UI tool: 'pen' | 'eraser'
@@ -67,9 +69,9 @@ export const WritingView: React.FC<WritingViewProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
-  const historyRef = useRef<ImageData[]>([]);
+  const historyRef = useRef<{ image: ImageData; hasDrawn: boolean }[]>([]);
   const activeToolRef = useRef<'pen' | 'eraser'>('pen');
-  activeToolRef.current = activeTool;
+  useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
 
   // Palm rejection & pointer isolation state
   const activePointerIdRef = useRef<number | null>(null);
@@ -83,24 +85,11 @@ export const WritingView: React.FC<WritingViewProps> = ({
     );
   });
   const isStylusPreferredRef = useRef(isStylusPreferred);
-  isStylusPreferredRef.current = isStylusPreferred;
+  useEffect(() => { isStylusPreferredRef.current = isStylusPreferred; }, [isStylusPreferred]);
 
   const currentWord = sessionWords[currentIndex];
 
-  // Sync words on external change
-  const wordsIdFingerprint = useMemo(() => {
-    return words.map(w => w.id).sort().join(',');
-  }, [words]);
-
-  useEffect(() => {
-    setSessionWords([...words]);
-    setCurrentIndex(0);
-    setScore(0);
-    setIsFinished(false);
-    resetCardState();
-  }, [wordsIdFingerprint]);
-
-  // Setup canvas resolution (Retina display support)
+    // Setup canvas resolution (Retina display support)
   const initCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -176,11 +165,10 @@ export const WritingView: React.FC<WritingViewProps> = ({
   }, [currentWord?.word, language]);
 
   useEffect(() => {
-    if (currentWord && !isFinished && !isSubmitted) {
-      resetCardState();
+    if (autoPlayAudio && currentWord && !isFinished && !isSubmitted) {
       playWordAudio(currentWord.word);
     }
-  }, [currentIndex, currentWord?.id, isFinished, isSubmitted, playWordAudio, resetCardState]);
+  }, [currentIndex, currentWord, isFinished, isSubmitted, playWordAudio, autoPlayAudio]);
 
   useEffect(() => {
     if (!isSubmitted) {
@@ -201,6 +189,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
 
     const handleResize = () => {
       initCanvas();
+      historyRef.current = [];
     };
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
@@ -210,7 +199,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
       window.removeEventListener('orientationchange', handleResize);
       if (ro) ro.disconnect();
     };
-  }, [initCanvas, isSubmitted]);
+  }, [initCanvas, isSubmitted, isFinished]);
 
   // Check if pointer is likely a resting palm/hand rather than deliberate drawing
   const isLikelyPalmTouch = (e: React.PointerEvent<HTMLCanvasElement>): boolean => {
@@ -283,7 +272,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
     if (!ctx) return null;
     try {
       const snap = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      historyRef.current.push(snap);
+      historyRef.current.push({ image: snap, hasDrawn });
       if (historyRef.current.length > 20) {
         historyRef.current.shift();
       }
@@ -303,10 +292,8 @@ export const WritingView: React.FC<WritingViewProps> = ({
     if (historyRef.current.length > 0) {
       const lastSnap = historyRef.current.pop();
       if (lastSnap) {
-        ctx.putImageData(lastSnap, 0, 0);
-      }
-      if (historyRef.current.length === 0) {
-        setHasDrawn(false);
+        ctx.putImageData(lastSnap.image, 0, 0);
+        setHasDrawn(lastSnap.hasDrawn);
       }
     }
   };
@@ -320,11 +307,10 @@ export const WritingView: React.FC<WritingViewProps> = ({
     if (historyRef.current.length > 0) {
       const lastSnap = historyRef.current.pop();
       if (lastSnap) {
-        ctx.putImageData(lastSnap, 0, 0);
+        ctx.putImageData(lastSnap.image, 0, 0);
+        setHasDrawn(lastSnap.hasDrawn);
       }
-      if (historyRef.current.length === 0) {
-        setHasDrawn(false);
-      }
+
     } else {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       setHasDrawn(false);
@@ -649,28 +635,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
         apiKey,
       });
 
-      // Extra client-side validation for wrong initial capitalization
-      const expLetter = currentWord.word.trim().match(/^\p{L}/u)?.[0];
-      const recLetter = (result.recognizedWord || '').trim().match(/^\p{L}/u)?.[0];
-      if (expLetter && recLetter) {
-        const isExpUpper = expLetter === expLetter.toUpperCase() && expLetter !== expLetter.toLowerCase();
-        const isRecUpper = recLetter === recLetter.toUpperCase() && recLetter !== recLetter.toLowerCase();
-        if (isExpUpper !== isRecUpper) {
-          result.capitalizationError = true;
-          result.isCorrect = false;
-          result.score = Math.min(result.score, 70);
-          if (result.schoolGrade.startsWith('1') || result.schoolGrade.startsWith('2')) {
-            result.schoolGrade = '3 (Befriedigend)';
-          }
-          const notice = isExpUpper
-            ? `Achte auf den Wortanfang: "${currentWord.word}" beginnt mit einem Großbuchstaben ("${expLetter}").`
-            : `Achte auf den Wortanfang: "${currentWord.word}" beginnt mit einem Kleinbuchstaben ("${expLetter}").`;
-          if (!result.feedback.toLowerCase().includes('groß') && !result.feedback.toLowerCase().includes('klein')) {
-            result.feedback = `${result.feedback} ${notice}`.trim();
-          }
-        }
-      }
-
+      await onRecordReview(currentWord.id, result.isCorrect);
       setGradeResult(result);
       setIsSubmitted(true);
 
@@ -679,8 +644,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
         confetti({ particleCount: 70, spread: 65, origin: { y: 0.6 } });
       }
 
-      // Record Leitner review
-      onRecordReview(currentWord.id, result.isCorrect);
     } catch (err: any) {
       console.error('Grading error', err);
       setGradingError(err?.message || 'Fehler beim Korrigieren durch Gemini.');
@@ -690,8 +653,9 @@ export const WritingView: React.FC<WritingViewProps> = ({
   };
 
   // Fallback self-grading if Gemini is offline/unconfigured
-  const handleManualGrading = (isCorrect: boolean) => {
-    if (!currentWord) return;
+  const handleManualGrading = async (isCorrect: boolean) => {
+    if (!currentWord || isGrading || isSubmitted) return;
+    setIsGrading(true);
     const fallbackResult: HandwritingGradeResponse = {
       recognizedWord: isCorrect ? currentWord.word : '(manuell gewertet)',
       isCorrect,
@@ -701,6 +665,9 @@ export const WritingView: React.FC<WritingViewProps> = ({
         ? 'Manuell als richtig bestätigt!' 
         : `Das Wort heißt: "${currentWord.word}". Präge es dir gut ein!`,
     };
+    try { await onRecordReview(currentWord.id, isCorrect); }
+    catch (error) { setGradingError((error as Error).message); return; }
+    finally { setIsGrading(false); }
     setGradeResult(fallbackResult);
     setIsSubmitted(true);
     setGradingError(null);
@@ -709,7 +676,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
       setScore(prev => prev + 1);
       confetti({ particleCount: 60, spread: 60, origin: { y: 0.6 } });
     }
-    onRecordReview(currentWord.id, isCorrect);
   };
 
   // Next word
@@ -729,6 +695,9 @@ export const WritingView: React.FC<WritingViewProps> = ({
   // Keyboard shortcut: Press Enter to proceed when result is displayed
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.querySelector('[role=dialog]')) return;
+      const target = e.target as HTMLElement;
+      if (target.isContentEditable || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return;
       if (e.key === 'Enter' && isSubmitted && !isGrading) {
         e.preventDefault();
         handleNextWord();
@@ -736,7 +705,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSubmitted, isGrading, currentIndex, sessionWords.length]);
+  });
 
   if (!sessionWords || sessionWords.length === 0) {
     return (

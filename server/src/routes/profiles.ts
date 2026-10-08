@@ -69,7 +69,7 @@ profilesRouter.post('/', (req: Request, res: Response) => {
     }
 
     const newProfile: UserProfile = {
-      id: `profile-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: typeof req.body.id === 'string' && req.body.id.length <= 128 ? req.body.id : `profile-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       name: name.trim(),
       avatar: (avatar && typeof avatar === 'string' ? avatar.trim() : '🦊'),
       color: (color && typeof color === 'string' ? color.trim() : '#6366f1'),
@@ -77,6 +77,11 @@ profilesRouter.post('/', (req: Request, res: Response) => {
       isDefault: false,
     };
 
+    const existing = getProfileById(newProfile.id);
+    if (existing) {
+      if (existing.name !== newProfile.name || existing.avatar !== newProfile.avatar) return res.status(409).json({ error: 'Profile ID conflict' });
+      return res.json(existing);
+    }
     const created = insertProfile(newProfile);
     res.status(201).json(created);
   } catch (error) {
@@ -114,6 +119,7 @@ profilesRouter.put('/:id', (req: Request, res: Response) => {
 profilesRouter.delete('/:id', (req: Request, res: Response) => {
   try {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!getProfileById(id)) return res.json({ success: true, id });
     const result = deleteProfile(id);
     if (!result.success) {
       return res.status(400).json({ error: result.error || 'Failed to delete profile' });

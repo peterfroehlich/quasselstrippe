@@ -40,6 +40,11 @@ spec:
             - configMapRef:
                 name: quasselstrippe-config
           env:
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: quasselstrippe-secret
+                  key: APP_PASSWORD
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:

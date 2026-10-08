@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   Search, 
   Plus, 
@@ -23,12 +23,12 @@ interface WordManagerProps {
   language: Language;
   profiles?: UserProfile[];
   activeProfile?: UserProfile | null;
-  onUpdateWord: (word: WordItem) => void;
-  onDeleteWord: (id: string) => void;
-  onDeleteLesson: (lesson: string) => void;
-  onAddWord: (word: WordItem) => void;
-  onImportWords: (words: WordItem[]) => void;
-  onResetProgress: () => void;
+  onUpdateWord: (word: WordItem) => Promise<void>;
+  onDeleteWord: (id: string) => Promise<void>;
+  onDeleteLesson: (lesson: string, scope?: string) => Promise<void>;
+  onAddWord: (word: WordItem) => Promise<void>;
+  onImportWords: (words: WordItem[]) => Promise<void>;
+  onResetProgress: () => Promise<void>;
 }
 
 export const WordManager: React.FC<WordManagerProps> = ({
@@ -43,6 +43,7 @@ export const WordManager: React.FC<WordManagerProps> = ({
   onImportWords,
   onResetProgress,
 }) => {
+  const savingRef = useRef(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedLesson, setSelectedLesson] = useState<string>('all');
   const [selectedProfileScope, setSelectedProfileScope] = useState<string>('all');
@@ -71,16 +72,19 @@ export const WordManager: React.FC<WordManagerProps> = ({
     return Array.from(new Set(languageWords.map(w => w.lesson))).filter(Boolean).sort();
   }, [languageWords]);
 
-  const lessonToDeleteWordCount = useMemo(() => {
-    if (!lessonToDelete) return 0;
-    return languageWords.filter(w => w.lesson === lessonToDelete).length;
-  }, [lessonToDelete, languageWords]);
-
-  const handleExecuteDeleteLesson = (lesson: string) => {
-    onDeleteLesson(lesson);
-    if (selectedLesson === lesson) {
-      setSelectedLesson('all');
-    }
+  const deletionScope = (lesson: string) => {
+    const collection = languageWords.filter(w => w.lesson === lesson);
+    return selectedProfileScope === 'shared' || (selectedProfileScope === 'all' && collection.length > 0 && collection.every(w => !w.profileId))
+      ? 'shared' : selectedProfileScope === 'all' ? activeProfile?.id : selectedProfileScope;
+  };
+  const lessonToDeleteWordCount = lessonToDelete ? languageWords.filter(w => w.lesson === lessonToDelete &&
+    (deletionScope(lessonToDelete) === 'shared' ? !w.profileId : w.profileId === deletionScope(lessonToDelete))).length : 0;
+  const handleExecuteDeleteLesson = async (lesson: string) => {
+    const scope = deletionScope(lesson);
+    if (scope === 'shared' && !confirm('Gemeinsame Vokabeln dieser Lektion für ALLE Profile löschen?')) return;
+    try { await onDeleteLesson(lesson, scope); }
+    catch (error) { alert((error as Error).message); return; }
+    if (selectedLesson === lesson) setSelectedLesson('all');
     setLessonToDelete(null);
   };
 
@@ -109,13 +113,13 @@ export const WordManager: React.FC<WordManagerProps> = ({
     setEditFormData({ ...word });
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingWordId || !editFormData.word || !editFormData.translation) return;
 
     const original = words.find(w => w.id === editingWordId);
-    if (!original) return;
-
-    onUpdateWord({
+    if (!original || savingRef.current) return;
+    savingRef.current = true;
+    try { await onUpdateWord({
       ...original,
       word: editFormData.word.trim(),
       translation: editFormData.translation.trim(),
@@ -126,13 +130,14 @@ export const WordManager: React.FC<WordManagerProps> = ({
       notes: editFormData.notes?.trim(),
       phonetic: editFormData.phonetic?.trim(),
       profileId: editFormData.profileId === 'shared' || !editFormData.profileId ? null : editFormData.profileId,
-    });
+    }).finally(() => { savingRef.current = false; });
 
+    } catch (error) { alert((error as Error).message); return; }
     setEditingWordId(null);
     setEditFormData({});
   };
 
-  const handleCreateNew = (e: React.FormEvent) => {
+  const handleCreateNew = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newWordData.word?.trim() || !newWordData.translation?.trim()) return;
 
@@ -157,7 +162,9 @@ export const WordManager: React.FC<WordManagerProps> = ({
       profileId: assignedProfileId,
     };
 
-    onAddWord(newItem);
+    if (savingRef.current) return;
+    savingRef.current = true;
+    try { await onAddWord(newItem).finally(() => { savingRef.current = false; }); } catch (error) { alert((error as Error).message); return; }
     setIsAddingNew(false);
     setNewWordData({
       word: '',
@@ -188,17 +195,19 @@ export const WordManager: React.FC<WordManagerProps> = ({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
+      if (savingRef.current) return;
+      savingRef.current = true;
       try {
         const parsed = JSON.parse(event.target?.result as string);
         const importedList = parsed.words || parsed;
         if (Array.isArray(importedList)) {
-          onImportWords(importedList);
+          await onImportWords(importedList);
           alert(`Erfolgreich ${importedList.length} Vokabeln importiert!`);
         }
       } catch (err) {
-        alert('Fehler beim Lesen der JSON-Datei: Ungültiges Format.');
-      }
+        alert(err instanceof Error ? err.message : 'Ungültige JSON-Datei.');
+      } finally { savingRef.current = false; }
     };
     reader.readAsText(file);
   };
@@ -268,8 +277,8 @@ export const WordManager: React.FC<WordManagerProps> = ({
           <button
             type="button"
             onClick={() => {
-              if (confirm('Möchtest du wirklich den Lernfortschritt aller Vokabeln auf Kasten 1 zurücksetzen?')) {
-                onResetProgress();
+              if (confirm('Möchtest du wirklich den Lernfortschritt dieses Profils auf Kasten 1 zurücksetzen?')) {
+                onResetProgress().catch(error => alert(error.message));
               }
             }}
             className="btn btn-ghost btn-sm"
@@ -777,8 +786,8 @@ export const WordManager: React.FC<WordManagerProps> = ({
                           <button
                             type="button"
                             onClick={() => {
-                              if (confirm(`Vokabel "${item.word}" wirklich löschen?`)) {
-                                onDeleteWord(item.id);
+                              if (confirm(`Vokabel "${item.word}" ${!item.profileId ? "für ALLE Profile " : ""}wirklich löschen?`)) {
+                                onDeleteWord(item.id).catch(error => alert(error.message));
                               }
                             }}
                             className="btn btn-ghost btn-sm"
@@ -1000,8 +1009,8 @@ export const WordManager: React.FC<WordManagerProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        if (confirm(`Vokabel "${item.word}" wirklich löschen?`)) {
-                          onDeleteWord(item.id);
+                        if (confirm(`Vokabel "${item.word}" ${!item.profileId ? "für ALLE Profile " : ""}wirklich löschen?`)) {
+                          onDeleteWord(item.id).catch(error => alert(error.message));
                         }
                       }}
                       className="btn btn-ghost btn-sm"

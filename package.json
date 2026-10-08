@@ -18,9 +18,15 @@
     "docker:build": "docker build -t quasselstrippe .",
     "docker:build:backend": "docker build -f Dockerfile.backend -t quasselstrippe-backend .",
     "docker:build:frontend": "docker build -f Dockerfile.frontend -t quasselstrippe-frontend .",
-    "docker:run": "docker compose up --build"
+    "docker:run": "docker compose up --build",
+    "test": "npm run build:server && node --test tests/*.test.mjs",
+    "test:e2e": "node --test tests/browser.e2e.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=22.13"
   }
 }

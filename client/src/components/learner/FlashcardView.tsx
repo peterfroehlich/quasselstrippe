@@ -17,7 +17,7 @@ import { speechService } from '../../services/speech';
 interface FlashcardViewProps {
   words: WordItem[];
   language: Language;
-  onRecordReview: (wordId: string, wasCorrect: boolean) => void;
+  onRecordReview: (wordId: string, wasCorrect: boolean, promote?: boolean) => Promise<void>;
   onRestart: () => void;
   autoPlayAudio?: boolean;
 }
@@ -80,23 +80,7 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
   // preventing the user from seeing the new word's answer!
   const [backWord, setBackWord] = useState<WordItem | null>(() => words[0] || null);
 
-  const wordsIdFingerprint = useMemo(() => {
-    return words.map(w => w.id).sort().join(',');
-  }, [words]);
 
-  // Synchronize deck only if the incoming pool of word IDs changes (e.g. lesson filter change)
-  useEffect(() => {
-    setDeck([...words]);
-    setInitialTotal(words.length);
-    setMasteredCount(0);
-    setBackWord(words[0] || null);
-    setIsFlipped(false);
-    setIsTransitioning(false);
-    setShowHint(false);
-    setCompleted(false);
-    setSessionStats({ correct: 0, reviewAgain: 0 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wordsIdFingerprint]);
 
   // Auto-play audio:
   // - In normal mode (!isInverted): speak target word when new card faces front
@@ -124,10 +108,13 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
     });
   }, [isTransitioning, currentWord]);
 
-  const handleResponse = useCallback((wasCorrect: boolean) => {
+  const handleResponse = useCallback(async (wasCorrect: boolean) => {
     if (!currentWord || isTransitioning) return;
 
-    onRecordReview(currentWord.id, wasCorrect);
+    setIsTransitioning(true);
+    try { await onRecordReview(currentWord.id, wasCorrect); }
+    catch { setIsTransitioning(false); return; }
+    setIsTransitioning(false);
 
     setSessionStats(prev => ({
       correct: prev.correct + (wasCorrect ? 1 : 0),
@@ -227,6 +214,9 @@ export const FlashcardView: React.FC<FlashcardViewProps> = ({
   // Keyboard navigation: Space to flip, 1 for retry, 2 for correct
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.querySelector('[role=dialog]')) return;
+      const target = e.target as HTMLElement;
+      if (target.isContentEditable || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') return;
       if (completed || isTransitioning) return;
       if (e.code === 'Space') {
         e.preventDefault();

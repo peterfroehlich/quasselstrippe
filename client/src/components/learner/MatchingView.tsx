@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, RotateCcw, Clock } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { WordItem, Language } from '../../types/vocabulary';
@@ -7,7 +7,7 @@ import { speechService } from '../../services/speech';
 interface MatchingViewProps {
   words: WordItem[];
   language: Language;
-  onRecordReview: (wordId: string, wasCorrect: boolean) => void;
+  onRecordReview: (wordId: string, wasCorrect: boolean, promote?: boolean) => Promise<void>;
   onRestart: () => void;
 }
 
@@ -47,6 +47,7 @@ export const MatchingView: React.FC<MatchingViewProps> = ({
   onRecordReview,
   onRestart,
 }) => {
+  const reviewPending = useRef(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [matchedIds, setMatchedIds] = useState<Set<string>>(new Set());
   const [wrongPair, setWrongPair] = useState<[string, string] | null>(null);
@@ -54,27 +55,10 @@ export const MatchingView: React.FC<MatchingViewProps> = ({
   const [seconds, setSeconds] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(true);
 
-  const [gameState, setGameState] = useState<{ gameWords: WordItem[]; cards: MatchCard[] }>(() => createGame(words));
+  const [gameState] = useState<{ gameWords: WordItem[]; cards: MatchCard[] }>(() => createGame(words));
   const { gameWords, cards } = gameState;
 
-  const wordsIdFingerprint = useMemo(() => {
-    return words.map(w => w.id).sort().join(',');
-  }, [words]);
 
-  const initGame = () => {
-    setGameState(createGame(words));
-    setMatchedIds(new Set());
-    setSelectedCardId(null);
-    setWrongPair(null);
-    setMoves(0);
-    setSeconds(0);
-    setIsTimerRunning(true);
-  };
-
-  useEffect(() => {
-    initGame();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wordsIdFingerprint]);
 
   useEffect(() => {
     let interval: number;
@@ -86,7 +70,8 @@ export const MatchingView: React.FC<MatchingViewProps> = ({
     return () => clearInterval(interval);
   }, [isTimerRunning, matchedIds.size, gameWords.length]);
 
-  const handleCardClick = (card: MatchCard) => {
+  const handleCardClick = async (card: MatchCard) => {
+    if (reviewPending.current) return;
     if (matchedIds.has(card.wordId) || card.id === selectedCardId || wrongPair) return;
 
     if (card.type === 'word') {
@@ -101,11 +86,14 @@ export const MatchingView: React.FC<MatchingViewProps> = ({
       if (!firstCard) return;
 
       if (firstCard.wordId === card.wordId && firstCard.type !== card.type) {
+        reviewPending.current = true;
+        try { await onRecordReview(card.wordId, true, false); }
+        catch { setSelectedCardId(null); return; }
+        finally { reviewPending.current = false; }
         const newMatched = new Set(matchedIds);
         newMatched.add(card.wordId);
         setMatchedIds(newMatched);
         setSelectedCardId(null);
-        onRecordReview(card.wordId, true);
 
         if (newMatched.size === gameWords.length) {
           setIsTimerRunning(false);
@@ -158,7 +146,6 @@ export const MatchingView: React.FC<MatchingViewProps> = ({
         <button
           type="button"
           onClick={() => {
-            initGame();
             onRestart();
           }}
           className="btn btn-primary btn-lg"

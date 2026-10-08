@@ -60,7 +60,7 @@ quasselstrippe/
 
 ## ☸️ Betrieb in Kubernetes (K8s)
 
-Das Repository enthält produktionsreife Kubernetes-Manifeste im Verzeichnis [`k8s/`](file:///Users/tarwin/Code/quasselstrippe/k8s).
+Das Repository enthält Kubernetes-Manifeste im Verzeichnis [`k8s/`](k8s/).
 
 ### 1. K8s-Architektur & Best Practices
 
@@ -89,9 +89,10 @@ npm run docker:build:frontend
 
 ### 3. In Kubernetes deployen
 ```bash
-# 1. Geheimes Secret vorbereiten (optional für Gemini API-Key)
+# 1. Secret mit APP_PASSWORD vorbereiten (Gemini API-Key optional)
 cp k8s/secret.example.yaml k8s/secret.yaml
-# Füge deinen GEMINI_API_KEY in k8s/secret.yaml ein
+# Setze APP_PASSWORD in k8s/secret.yaml auf ein privates Passwort.
+# GEMINI_API_KEY ist optional.
 
 # 2. Alle Ressourcen per Kustomize ausrollen:
 kubectl apply -k ./k8s
@@ -150,6 +151,10 @@ Wenn Kubernetes einen Pod beendet, sendet Kubelet `SIGTERM`. Das Backend:
 Docker Compose startet das vollständige 2-Container-Setup (Frontend + Backend) mit automatischer Abhängigkeitsprüfung über Healthchecks:
 
 ```bash
+cp .env.example .env
+# APP_PASSWORD in .env durch ein privates Passwort ersetzen.
+mkdir -p data
+# Das Backend läuft als UID 1000; data muss für diesen Benutzer schreibbar sein.
 docker compose up -d --build
 ```
 Die Anwendung ist sofort erreichbar unter:
@@ -162,7 +167,7 @@ Die Anwendung ist sofort erreichbar unter:
 
 ## 💻 Lokale Entwicklung (ohne Docker)
 
-Voraussetzung: Node.js >= 22 (enthält die native `node:sqlite` Engine).
+Voraussetzung: Node.js >= 22.13 (enthält die native `node:sqlite` Engine).
 
 ```bash
 # Abhängigkeiten installieren
@@ -175,6 +180,40 @@ npm run dev
 - **Frontend:** `http://localhost:5173` (Vite Dev-Server mit HMR & Proxy nach `:3001`)
 
 ---
+
+## Anmeldung, Offline-Betrieb und Wiederholungen
+
+Alle Vokabel-, Profil-, Einstellungs- und KI-Endpunkte benötigen eine Anmeldung.
+`APP_PASSWORD` ist in Produktion erforderlich. Ohne Umgebungsvariable gibt der
+Entwicklungsserver ein zufälliges Passwort im Terminal aus. Die Sitzung liegt in
+einem signierten HttpOnly-Cookie; nach einem Serverneustart ist eine erneute Anmeldung nötig.
+Für HTTPS kann `COOKIE_SECURE=true` gesetzt werden. Die App ist für eine gemeinsam
+verwaltete Familie oder Lerngruppe gedacht; Profile sind keine getrennten Benutzerkonten.
+
+Ein persönlicher Gemini-Schlüssel bleibt im Browser und wird nur mit KI-Anfragen
+übertragen. Alternativ wird `GEMINI_API_KEY` ausschließlich auf dem Server gesetzt.
+Die Einstellungs-API gibt keine Schlüssel zurück.
+
+Bereits geladene Vokabeln und Profile werden in IndexedDB gespeichert. Änderungen
+werden als geordnete Operationen dauerhaft zwischengespeichert und bei Verbindung
+synchronisiert. Abgewiesene Änderungen zeigen einen Fehler; sie gelten nicht als
+erfolgreich gespeichert. Der Zähler in der App zeigt ausstehende Synchronisierungen.
+Offline sind nur die auf diesem Gerät vorhandenen Daten verfügbar. Historische
+Statistiken werden nur angezeigt, wenn echte Daten gespeichert wurden.
+
+„Heute fällig“ verwendet Wiederholungsintervalle von 1, 3, 7, 14 und 30 Tagen für
+die fünf Kästen. Fehler setzen ein Wort auf Kasten 1 zurück. Richtige Antworten
+befördern ein Wort nur, wenn die Wiederholung fällig ist. Quiz, Paare und Antworten
+mit Buchstabenhilfe zählen als Übung, erhöhen aber nicht den Kasten.
+
+Das Wiederherstellen der Beispiele ersetzt ausdrücklich die Sammlung **aller Profile**.
+Lektionslöschungen sind auf das gewählte Profil beschränkt; gemeinsame Wörter werden
+nur über den ausdrücklich bestätigten Bereich „Gemeinsam“ gelöscht.
+
+Prüfungen: `npm run build`, `npm run lint -w client`, `npm test`.
+Browserprüfungen: zuerst `npx playwright install chromium`, dann nach dem Build
+`npm run test:e2e`. Diese Prüfungen verwenden eine temporäre Datenbank und
+übertragen keine Bilder an Gemini.
 
 ## 🗄️ REST API Übersicht
 

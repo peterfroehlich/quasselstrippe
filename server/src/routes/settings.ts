@@ -1,28 +1,17 @@
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
 import { getSettings, updateSettings } from '../db/database.js';
-import type { AppSettings } from '../types.js';
-
 export const settingsRouter = Router();
-
-// GET /api/settings
-settingsRouter.get('/', (_req: Request, res: Response) => {
-  try {
-    const settings = getSettings();
-    res.json(settings);
-  } catch (error) {
-    console.error('Error getting settings:', error);
-    res.status(500).json({ error: 'Failed to retrieve settings' });
-  }
-});
-
-// PUT /api/settings
-settingsRouter.put('/', (req: Request, res: Response) => {
-  try {
-    const payload = req.body as Partial<AppSettings>;
-    const updated = updateSettings(payload);
-    res.json(updated);
-  } catch (error) {
-    console.error('Error updating settings:', error);
-    res.status(500).json({ error: 'Failed to update settings' });
-  }
+const publicSettings = () => {
+  const { geminiApiKey, ...settings } = getSettings();
+  return { ...settings, geminiApiKey: '', aiAvailable: Boolean(process.env.GEMINI_API_KEY || geminiApiKey) };
+};
+settingsRouter.get('/', (_req, res) => res.json(publicSettings()));
+settingsRouter.put('/', (req, res) => {
+  const { activeLanguage, speechRate, autoPlayAudio } = req.body || {};
+  if ((activeLanguage !== undefined && activeLanguage !== 'en' && activeLanguage !== 'la') ||
+      (speechRate !== undefined && (typeof speechRate !== 'number' || !Number.isFinite(speechRate) || speechRate < 0.6 || speechRate > 1.2)) ||
+      (autoPlayAudio !== undefined && typeof autoPlayAudio !== 'boolean')) return void res.status(400).json({ error: 'Invalid settings' });
+  updateSettings({ ...(activeLanguage !== undefined ? { activeLanguage } : {}),
+    ...(speechRate !== undefined ? { speechRate } : {}), ...(autoPlayAudio !== undefined ? { autoPlayAudio } : {}) });
+  res.json(publicSettings());
 });

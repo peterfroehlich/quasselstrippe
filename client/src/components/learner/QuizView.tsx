@@ -9,7 +9,8 @@ interface QuizViewProps {
   words: WordItem[];
   allWords: WordItem[];
   language: Language;
-  onRecordReview: (wordId: string, wasCorrect: boolean) => void;
+  autoPlayAudio?: boolean;
+  onRecordReview: (wordId: string, wasCorrect: boolean, promote?: boolean) => Promise<void>;
   onRestart: () => void;
 }
 
@@ -17,6 +18,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
   words,
   allWords,
   language,
+  autoPlayAudio = true,
   onRecordReview,
   onRestart,
 }) => {
@@ -28,24 +30,12 @@ export const QuizView: React.FC<QuizViewProps> = ({
   const [score, setScore] = useState(0);
   const [isFinished, setIsFinished] = useState(false);
 
-  const wordsIdFingerprint = useMemo(() => {
-    return words.map(w => w.id).sort().join(',');
-  }, [words]);
 
-  // Synchronize question pool only if the incoming set of question IDs changes
-  useEffect(() => {
-    setQuizWords([...words]);
-    setCurrentIndex(0);
-    setSelectedOption(null);
-    setIsAnswered(false);
-    setScore(0);
-    setIsFinished(false);
-  }, [wordsIdFingerprint]);
 
   const currentWord = quizWords[currentIndex];
 
   // Pre-generate and freeze choices for each word so options don't jump around on re-renders
-  const optionsMap = useMemo(() => {
+  const [optionsMap] = useState(() => {
     const map = new Map<string, string[]>();
     const otherTranslations = allWords
       .filter(w => w.language === language)
@@ -61,7 +51,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wordsIdFingerprint, allWords.length, language]);
+  });
 
   const options = useMemo(() => {
     if (!currentWord) return [];
@@ -69,22 +59,23 @@ export const QuizView: React.FC<QuizViewProps> = ({
   }, [optionsMap, currentWord]);
 
   useEffect(() => {
-    if (currentWord && !isAnswered && !isFinished) {
+    if (autoPlayAudio && currentWord && !isAnswered && !isFinished) {
       speechService.speak(currentWord.word, language);
     }
-  }, [currentIndex, currentWord, language, isAnswered, isFinished]);
+  }, [currentIndex, currentWord, language, isAnswered, isFinished, autoPlayAudio]);
 
-  const handleSelectOption = (option: string) => {
+  const handleSelectOption = async (option: string) => {
     if (isAnswered || !currentWord) return;
 
     setSelectedOption(option);
     setIsAnswered(true);
 
     const isCorrect = option === currentWord.translation;
+    try { await onRecordReview(currentWord.id, isCorrect, false); }
+    catch { setIsAnswered(false); setSelectedOption(null); return; }
     if (isCorrect) {
       setScore(prev => prev + 1);
     }
-    onRecordReview(currentWord.id, isCorrect);
   };
 
   const handleNext = () => {

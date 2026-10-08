@@ -1,19 +1,30 @@
+import { validateWorksheet, validateGrade } from '../validation.js';
 import { Router, Request, Response } from 'express';
 import { getSettings } from '../db/database.js';
-import type { Language, WorksheetAnalysisResponse, ExtractedWordCandidate, HandwritingGradeResponse } from '../types.js';
+import type { WorksheetAnalysisResponse, HandwritingGradeResponse } from '../types.js';
 
 export const aiRouter = Router();
+let activeRequests = 0;
+aiRouter.use((_req, res, next) => {
+  if (activeRequests >= 4) return void res.status(429).json({ error: 'Die KI ist gerade ausgelastet. Bitte erneut versuchen.' });
+  activeRequests++;
+  let released = false;
+  const release = () => { if (!released) { released = true; activeRequests--; } };
+  res.once('finish', release); res.once('close', release);
+  next();
+});
 
 // POST /api/ai/analyze-worksheet
 aiRouter.post('/analyze-worksheet', async (req: Request, res: Response) => {
   try {
     const { base64Data, mimeType = 'image/jpeg', language = 'en', suggestedLesson = '', apiKey: customApiKey } = req.body;
 
-    if (!base64Data) {
+    if (typeof base64Data !== 'string' || !base64Data || base64Data.length > 45000000 || !['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(mimeType) || !['en', 'la'].includes(language)) {
       return res.status(400).json({ error: 'base64Data is required' });
     }
 
     const settings = getSettings();
+    if (customApiKey !== undefined && typeof customApiKey !== 'string') return void res.status(400).json({ error: 'Invalid API key' });
     const apiKey = process.env.GEMINI_API_KEY || customApiKey || settings.geminiApiKey;
 
     if (!apiKey) {
@@ -117,19 +128,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
           throw new Error('Gemini-Antwort konnte nicht als Vokabelliste interpretiert werden.');
         }
 
-        const wordsWithSelection = (parsed.words || []).map((w: ExtractedWordCandidate) => ({
-          ...w,
-          language: (w.language as Language) || language,
-          lesson: suggestedLesson || parsed.lessonName || 'Neue Lektion',
-          selected: true,
-        }));
-
-        resultData = {
-          detectedTopic: parsed.detectedTopic || 'Arbeitsblatt Vokabeln',
-          lessonName: suggestedLesson || parsed.lessonName || 'Neue Lektion',
-          summary: parsed.summary,
-          words: wordsWithSelection,
-        };
+        resultData = validateWorksheet(parsed, language, suggestedLesson);
         break; // Successfully obtained response!
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
@@ -152,15 +151,16 @@ aiRouter.post('/grade-handwriting', async (req: Request, res: Response) => {
   try {
     const { base64Data, mimeType = 'image/jpeg', expectedWord = '', language = 'en', apiKey: customApiKey } = req.body;
 
-    if (!base64Data) {
+    if (typeof base64Data !== 'string' || !base64Data || base64Data.length > 45000000 || !['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(mimeType) || !['en', 'la'].includes(language)) {
       return res.status(400).json({ error: 'base64Data is required' });
     }
 
-    if (!expectedWord) {
+    if (typeof expectedWord !== 'string' || !expectedWord.trim() || expectedWord.length > 10000) {
       return res.status(400).json({ error: 'expectedWord is required' });
     }
 
     const settings = getSettings();
+    if (customApiKey !== undefined && typeof customApiKey !== 'string') return void res.status(400).json({ error: 'Invalid API key' });
     const apiKey = process.env.GEMINI_API_KEY || customApiKey || settings.geminiApiKey;
 
     if (!apiKey) {
@@ -285,49 +285,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
           throw new Error('Gemini-Antwort konnte nicht als JSON interpretiert werden.');
         }
 
-        // Deterministic validation of initial letter capitalization
-        const expLetter = expectedWord.trim().match(/^\p{L}/u)?.[0];
-        const recLetter = (parsed.recognizedWord || '').trim().match(/^\p{L}/u)?.[0];
-        let hasCapitalizationMismatch = false;
-        let capNotice = '';
-
-        if (expLetter && recLetter) {
-          const isExpUpper = expLetter === expLetter.toUpperCase() && expLetter !== expLetter.toLowerCase();
-          const isRecUpper = recLetter === recLetter.toUpperCase() && recLetter !== recLetter.toLowerCase();
-          if (isExpUpper !== isRecUpper) {
-            hasCapitalizationMismatch = true;
-            capNotice = isExpUpper
-              ? `Achte auf den Wortanfang: "${expectedWord}" beginnt mit einem Großbuchstaben ("${expLetter}").`
-              : `Achte auf den Wortanfang: "${expectedWord}" beginnt mit einem Kleinbuchstaben ("${expLetter}").`;
-          }
-        }
-
-        const capitalizationError = Boolean(parsed.capitalizationError || hasCapitalizationMismatch);
-        let isCorrect = Boolean(parsed.isCorrect);
-        let score = typeof parsed.score === 'number' ? parsed.score : isCorrect ? 100 : 40;
-        let schoolGrade = parsed.schoolGrade || (isCorrect ? '1 (Sehr gut)' : '5 (Mangelhaft)');
-        let feedback = parsed.feedback || (isCorrect ? 'Super gemacht!' : 'Übe dieses Wort noch einmal.');
-
-        if (capitalizationError) {
-          isCorrect = false;
-          score = Math.min(score, 70);
-          if (schoolGrade.startsWith('1') || schoolGrade.startsWith('2')) {
-            schoolGrade = '3 (Befriedigend)';
-          }
-          if (capNotice && !feedback.toLowerCase().includes('groß') && !feedback.toLowerCase().includes('klein')) {
-            feedback = `${feedback} ${capNotice}`.trim();
-          }
-        }
-
-        resultData = {
-          recognizedWord: parsed.recognizedWord || '(unbekannt)',
-          isCorrect,
-          score,
-          schoolGrade,
-          feedback,
-          capitalizationError,
-          model,
-        };
+        resultData = { ...validateGrade(parsed, expectedWord), model };
         break;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));

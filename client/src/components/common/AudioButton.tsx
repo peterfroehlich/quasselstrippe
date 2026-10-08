@@ -24,7 +24,7 @@ export const AudioButton: React.FC<AudioButtonProps> = ({
   variant = 'circle',
   label,
   className = '',
-  rate = 0.88,
+  rate,
   style,
   title,
 }) => {

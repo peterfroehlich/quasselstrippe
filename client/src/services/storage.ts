@@ -1,21 +1,21 @@
 import { get, set } from 'idb-keyval';
+import { validateWord } from './validation';
+import { nextReviewState } from './learning';
 import type {
   WordItem,
   AppSettings,
   Language,
   UserProfile,
   LearnerStats,
-  ReviewHistoryPoint,
-  DifficultWordItem,
 } from '../types/vocabulary';
 import {
+  ApiError,
   apiGetProfiles,
   apiCreateProfile,
   apiUpdateProfile,
   apiDeleteProfile,
   apiGetLearnerStats,
   apiGetWords,
-  apiCreateWord,
   apiBatchCreateWords,
   apiUpdateWord,
   apiDeleteWord,
@@ -28,9 +28,7 @@ import {
 } from './api';
 
 
-const WORDS_STORAGE_KEY = 'quasselstrippe_words_v1';
 const SETTINGS_STORAGE_KEY = 'quasselstrippe_settings_v1';
-const PROFILES_STORAGE_KEY = 'quasselstrippe_profiles_v1';
 const ACTIVE_PROFILE_KEY = 'quasselstrippe_active_profile_id_v1';
 
 export const DEFAULT_PROFILE: UserProfile = {
@@ -297,437 +295,285 @@ export const INITIAL_WORDS: WordItem[] = [
   }
 ];
 
-// --- Profiles Storage & Sync ---
+// One atomic IndexedDB record contains pending operations and snapshots scoped by profile.
+// Legacy generic caches are intentionally never used: they have no ownership information.
+const JOURNAL_KEY = 'quasselstrippe_sync_v2';
+type Operation = {
+  id: string;
+  kind: 'createProfile' | 'updateProfile' | 'deleteProfile' | 'addWords' | 'updateWord' |
+    'deleteWord' | 'deleteLesson' | 'review' | 'resetProgress' | 'resetDefaults' | 'settings';
+  profileId: string;
+  words?: WordItem[];
+  word?: WordItem;
+  profile?: UserProfile;
+  targetId?: string;
+  lesson?: string;
+  language?: Language;
+  scope?: string;
+  wasCorrect?: boolean;
+  reviewedAt?: number;
+  promote?: boolean;
+  settings?: Partial<AppSettings>;
+};
+interface Journal {
+  pending: Operation[];
+  words: Record<string, WordItem[]>;
+  profiles?: UserProfile[];
+  stats: Record<string, LearnerStats>;
+}
+let tail: Promise<unknown> = Promise.resolve();
+function serial<T>(work: () => Promise<T>): Promise<T> {
+  const locked = () => typeof navigator !== 'undefined' && navigator.locks ? navigator.locks.request('quasselstrippe-sync', work) : work();
+  const result = tail.then(locked, locked);
+  tail = result.catch(() => {});
+  return result;
+}
+async function readJournal(): Promise<Journal> {
+  return await get<Journal>(JOURNAL_KEY) || { pending: [], words: {}, stats: {} };
+}
+async function persist(state: Journal): Promise<void> {
+  await set(JOURNAL_KEY, state);
+  window.dispatchEvent(new CustomEvent('quasselstrippe:sync', { detail: { pending: state.pending.length } }));
+}
+const retryable = (error: unknown) => error instanceof ApiError && error.retryable;
+const visible = (word: WordItem, id: string) => !word.profileId || word.profileId === id;
 
+async function execute(op: Operation): Promise<void> {
+  switch (op.kind) {
+    case 'createProfile': await apiCreateProfile(op.profile!, op.id); break;
+    case 'updateProfile': await apiUpdateProfile(op.profile!, op.id); break;
+    case 'deleteProfile': await apiDeleteProfile(op.targetId!, op.id); break;
+    case 'addWords': await apiBatchCreateWords(op.words!, op.id); break;
+    case 'updateWord': await apiUpdateWord(op.word!, op.profileId, op.id); break;
+    case 'deleteWord':
+      try { await apiDeleteWord(op.targetId!, op.profileId, op.id); }
+      catch (error) { if (!(error instanceof ApiError && error.status === 404)) throw error; }
+      break;
+    case 'deleteLesson': await apiDeleteLesson(op.lesson!, op.language, op.scope || op.profileId, op.id); break;
+    case 'review':
+      await apiRecordReview(op.targetId!, op.wasCorrect!, op.profileId, op.id, op.reviewedAt!, op.promote!); break;
+    case 'resetProgress': await apiResetProgress(op.profileId, op.id); break;
+    case 'resetDefaults': await apiResetToDefaults(op.id); break;
+    case 'settings': await apiSaveSettings(op.settings!); break;
+  }
+}
+async function flush(state: Journal): Promise<boolean> {
+  while (state.pending.length) {
+    const op = state.pending[0];
+    try { await execute(op); }
+    catch (error) {
+      if (retryable(error)) return false;
+      // Rejected writes are reported, never converted into apparent offline success.
+      // Authentication expiry leaves the queue intact for the next login.
+      if (!(error instanceof ApiError && error.status === 401)) {
+        state.pending.shift();
+        state.words = {};
+        state.profiles = undefined;
+        state.stats = {};
+        await persist(state);
+      }
+      throw error;
+    }
+    state.pending.shift();
+    await persist(state);
+  }
+  return true;
+}
+function apply(state: Journal, op: Operation) {
+  let words = state.words[op.profileId] || [];
+  const clean = (w: WordItem): WordItem => ({ ...w, box: 1, correctCount: 0, incorrectCount: 0, lastReviewedAt: undefined });
+  switch (op.kind) {
+    case 'settings': return;
+    case 'createProfile':
+      state.profiles = [...(state.profiles || []), op.profile!];
+      state.words[op.profile!.id] = words.filter(w => !w.profileId).map(clean);
+      break;
+    case 'updateProfile': state.profiles = (state.profiles || []).map(p => p.id === op.profile!.id ? op.profile! : p); break;
+    case 'deleteProfile':
+      state.profiles = (state.profiles || []).filter(p => p.id !== op.targetId);
+      delete state.words[op.targetId!]; break;
+    case 'addWords': {
+      const map = new Map(words.map(w => [w.id, w]));
+      for (const w of op.words!) {
+        const existing = map.get(w.id);
+        map.set(w.id, existing ? { ...w, box: existing.box, correctCount: existing.correctCount,
+          incorrectCount: existing.incorrectCount, lastReviewedAt: existing.lastReviewedAt } : clean(w));
+      }
+      words = [...map.values()].filter(w => visible(w, op.profileId)); break;
+    }
+    case 'updateWord': words = words.map(w => w.id === op.word!.id ? { ...op.word!, box: w.box,
+      correctCount: w.correctCount, incorrectCount: w.incorrectCount, lastReviewedAt: w.lastReviewedAt } : w).filter(w => visible(w, op.profileId)); break;
+    case 'deleteWord': words = words.filter(w => w.id !== op.targetId); break;
+    case 'deleteLesson': words = words.filter(w => !(w.lesson === op.lesson && (!op.language || w.language === op.language) &&
+      (op.scope === 'shared' ? !w.profileId : w.profileId === op.profileId))); break;
+    case 'review': words = words.map(w => w.id === op.targetId ? nextReviewState(w, op.wasCorrect!, op.reviewedAt, op.promote) : w); break;
+    case 'resetProgress': words = words.map(clean); break;
+    case 'resetDefaults':
+      state.words = Object.fromEntries(Object.keys(state.words).map(id => [id, INITIAL_WORDS.map(clean)]));
+      words = INITIAL_WORDS.map(clean); break;
+  }
+  state.words[op.profileId] = words;
+  for (const [profileId, snapshot] of Object.entries(state.words)) {
+    if (profileId === op.profileId) continue;
+    if (op.kind === 'addWords' || op.kind === 'updateWord') {
+      const updates = op.words || (op.word ? [op.word] : []);
+      const map = new Map(snapshot.map(w => [w.id, w]));
+      for (const w of updates) {
+        if (!visible(w, profileId)) { map.delete(w.id); continue; }
+        const progress = map.get(w.id);
+        map.set(w.id, progress ? { ...w, box: progress.box, correctCount: progress.correctCount,
+          incorrectCount: progress.incorrectCount, lastReviewedAt: progress.lastReviewedAt } : clean(w));
+      }
+      state.words[profileId] = [...map.values()];
+    } else if (op.kind === 'deleteWord') state.words[profileId] = snapshot.filter(w => w.id !== op.targetId);
+    else if (op.kind === 'deleteLesson') state.words[profileId] = snapshot.filter(w => !(w.lesson === op.lesson &&
+      (!op.language || w.language === op.language) && (op.scope === 'shared' ? !w.profileId : w.profileId === op.profileId)));
+    else if (op.kind === 'deleteProfile') state.words[profileId] = snapshot.filter(w => w.profileId !== op.targetId);
+  }
+  state.stats = {};
+}
+async function loadWordsUnlocked(state: Journal, profileId: string): Promise<WordItem[]> {
+  if (await flush(state)) {
+    try {
+      const words = await apiGetWords(undefined, profileId);
+      state.words[profileId] = words;
+      await persist(state);
+      return words;
+    } catch (error) { if (!retryable(error)) throw error; }
+  }
+  return (state.words[profileId] || []).filter(w => visible(w, profileId));
+}
+async function mutate(op: Operation): Promise<WordItem[]> {
+  return serial(async () => {
+    const state = await readJournal();
+    await loadWordsUnlocked(state, op.profileId);
+    // Persist the operation together with the optimistic snapshot before sending it.
+    apply(state, op);
+    state.pending.push(op);
+    await persist(state);
+    await flush(state);
+    if (op.kind === 'deleteProfile' && op.targetId === op.profileId) return [];
+    return loadWordsUnlocked(state, op.profileId);
+  });
+}
+export async function syncOfflineChanges(): Promise<void> {
+  await serial(async () => { const state = await readJournal(); await flush(state); await persist(state); });
+}
 export function getActiveProfileId(): string {
-  try {
-    return localStorage.getItem(ACTIVE_PROFILE_KEY) || 'default';
-  } catch {
-    return 'default';
-  }
+  return localStorage.getItem(ACTIVE_PROFILE_KEY) || 'default';
 }
-
-export function setActiveProfileId(id: string): void {
-  try {
-    localStorage.setItem(ACTIVE_PROFILE_KEY, id);
-  } catch {}
-}
-
+export function setActiveProfileId(id: string): void { localStorage.setItem(ACTIVE_PROFILE_KEY, id); }
 export async function loadProfiles(): Promise<UserProfile[]> {
-  try {
-    const serverProfiles = await apiGetProfiles();
-    if (serverProfiles && serverProfiles.length > 0) {
-      set(PROFILES_STORAGE_KEY, serverProfiles).catch(() => {});
-      localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(serverProfiles));
-      return serverProfiles;
+  return serial(async () => {
+    const state = await readJournal();
+    if (await flush(state)) {
+      try { state.profiles = await apiGetProfiles(); await persist(state); }
+      catch (error) { if (!retryable(error)) throw error; }
     }
-  } catch (err) {
-    console.warn('[Storage] Profiles server unavailable, falling back to local cache', err);
-  }
-
-  // Fallback to IndexedDB
-  try {
-    const saved = await get<UserProfile[]>(PROFILES_STORAGE_KEY);
-    if (saved && Array.isArray(saved) && saved.length > 0) {
-      return saved;
-    }
-  } catch {}
-
-  // Fallback to localStorage
-  try {
-    const local = localStorage.getItem(PROFILES_STORAGE_KEY);
-    if (local) {
-      return JSON.parse(local);
-    }
-  } catch {}
-
-  return [DEFAULT_PROFILE];
+    return state.profiles || [];
+  });
 }
-
-export async function saveProfiles(profiles: UserProfile[]): Promise<void> {
-  try {
-    await set(PROFILES_STORAGE_KEY, profiles);
-  } catch {}
-  try {
-    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(profiles));
-  } catch {}
-}
-
 export async function createProfile(data: { name: string; avatar?: string; color?: string }): Promise<UserProfile[]> {
-  try {
-    await apiCreateProfile(data);
-    return await loadProfiles();
-  } catch (err) {
-    console.warn('[Storage] Server error creating profile, fallback to local', err);
-    const existing = await loadProfiles();
-    const newProfile: UserProfile = {
-      id: `profile-${Date.now()}`,
-      name: data.name.trim(),
-      avatar: data.avatar || '🦊',
-      color: data.color || '#6366f1',
-      createdAt: Date.now(),
-      isDefault: false,
-    };
-    const updated = [...existing, newProfile];
-    await saveProfiles(updated);
-    return updated;
-  }
+  const profiles = await loadProfiles();
+  const profile: UserProfile = { id: crypto.randomUUID(), name: data.name.trim(), avatar: data.avatar || '🦊', color: data.color || '#6366f1', createdAt: Date.now() };
+  if (!profile.name) throw new Error('Bitte gib einen Namen ein.');
+  await mutate({ id: crypto.randomUUID(), kind: 'createProfile', profileId: profiles[0]?.id || profile.id, profile });
+  return loadProfiles();
 }
-
 export async function updateProfile(profile: UserProfile): Promise<UserProfile[]> {
-  try {
-    await apiUpdateProfile(profile);
-    return await loadProfiles();
-  } catch (err) {
-    console.warn('[Storage] Server error updating profile, fallback to local', err);
-    const existing = await loadProfiles();
-    const updated = existing.map(p => (p.id === profile.id ? profile : p));
-    await saveProfiles(updated);
-    return updated;
-  }
+  if (!profile.name.trim()) throw new Error('Bitte gib einen Namen ein.');
+  await mutate({ id: crypto.randomUUID(), kind: 'updateProfile', profileId: profile.id, profile });
+  return loadProfiles();
 }
-
 export async function deleteProfile(id: string): Promise<UserProfile[]> {
-  try {
-    await apiDeleteProfile(id);
-    return await loadProfiles();
-  } catch (err) {
-    console.warn('[Storage] Server error deleting profile, fallback to local', err);
-    const existing = await loadProfiles();
-    if (existing.length <= 1) return existing;
-    const updated = existing.filter(p => p.id !== id);
-    await saveProfiles(updated);
-    if (getActiveProfileId() === id) {
-      setActiveProfileId(updated[0]?.id || 'default');
-    }
-    return updated;
-  }
+  const profiles = await loadProfiles();
+  if (profiles.length <= 1) throw new Error('Das letzte Profil kann nicht gelöscht werden.');
+  await mutate({ id: crypto.randomUUID(), kind: 'deleteProfile', profileId: getActiveProfileId(), targetId: id });
+  const updated = await loadProfiles();
+  if (getActiveProfileId() === id && updated[0]) setActiveProfileId(updated[0].id);
+  return updated;
 }
-
-// --- Words Storage & Sync (Profile-Aware) ---
-
-export async function loadWords(language?: Language, profileId?: string): Promise<WordItem[]> {
-  const pId = profileId !== undefined ? profileId : getActiveProfileId();
-  try {
-    // 1. Try to fetch from SQLite server
-    const serverWords = await apiGetWords(language, pId);
-    if (serverWords && serverWords.length > 0) {
-      // Cache locally in IndexedDB
-      set(`${WORDS_STORAGE_KEY}_${pId}`, serverWords).catch(() => {});
-      return serverWords;
-    }
-  } catch (err) {
-    console.warn('[Storage] Server unavailable, falling back to local cache', err);
-  }
-
-  // 2. Fallback to IndexedDB
-  try {
-    const saved = await get<WordItem[]>(`${WORDS_STORAGE_KEY}_${pId}`);
-    if (saved && Array.isArray(saved) && saved.length > 0) {
-      return saved;
-    }
-  } catch {}
-
-  // 3. Fallback to generic WORDS_STORAGE_KEY
-  try {
-    const saved = await get<WordItem[]>(WORDS_STORAGE_KEY);
-    if (saved && Array.isArray(saved) && saved.length > 0) {
-      return saved;
-    }
-  } catch {}
-
-  return INITIAL_WORDS;
+export async function loadWords(language?: Language, profileId = getActiveProfileId()): Promise<WordItem[]> {
+  return serial(async () => {
+    const words = await loadWordsUnlocked(await readJournal(), profileId);
+    return language ? words.filter(w => w.language === language) : words;
+  });
 }
-
-export async function saveWords(words: WordItem[], profileId?: string): Promise<void> {
-  const pId = profileId !== undefined ? profileId : getActiveProfileId();
-  // Save to SQLite server in batch
-  try {
-    await apiBatchCreateWords(words);
-  } catch (err) {
-    console.warn('[Storage] Could not sync all words with server', err);
-  }
-
-  // Save to local cache
-  try {
-    await set(`${WORDS_STORAGE_KEY}_${pId}`, words);
-    await set(WORDS_STORAGE_KEY, words);
-  } catch {}
+export async function addWord(word: WordItem, profileId = getActiveProfileId()): Promise<WordItem[]> { return addWords([word], profileId); }
+export async function addWords(words: WordItem[], profileId = getActiveProfileId()): Promise<WordItem[]> {
+  words = words.map(validateWord);
+  if (new Set(words.map(w => w.id)).size !== words.length) throw new Error('Doppelte Vokabel-IDs.');
+  return mutate({ id: crypto.randomUUID(), kind: 'addWords', profileId, words });
 }
-
-export async function addWord(newWord: WordItem, profileId?: string): Promise<WordItem[]> {
-  const pId = profileId !== undefined ? profileId : getActiveProfileId();
-  try {
-    await apiCreateWord(newWord);
-    return await loadWords(undefined, pId);
-  } catch (err) {
-    console.warn('[Storage] Server error on addWord, falling back to local', err);
-    const words = await loadWords(undefined, pId);
-    const updated = [newWord, ...words];
-    await saveWords(updated, pId);
-    return updated;
-  }
+export async function updateWord(word: WordItem, profileId = getActiveProfileId()): Promise<WordItem[]> {
+  return mutate({ id: crypto.randomUUID(), kind: 'updateWord', profileId, word: validateWord(word) });
 }
-
-export async function addWords(newWords: WordItem[], profileId?: string): Promise<WordItem[]> {
-  const pId = profileId !== undefined ? profileId : getActiveProfileId();
-  try {
-    await apiBatchCreateWords(newWords);
-    return await loadWords(undefined, pId);
-  } catch (err) {
-    console.warn('[Storage] Server error on addWords, falling back to local', err);
-    const words = await loadWords(undefined, pId);
-    const updated = [...newWords, ...words];
-    await saveWords(updated, pId);
-    return updated;
-  }
+export async function deleteWord(id: string, profileId = getActiveProfileId()): Promise<WordItem[]> {
+  return mutate({ id: crypto.randomUUID(), kind: 'deleteWord', profileId, targetId: id });
 }
-
-export async function updateWord(updatedWord: WordItem, profileId?: string): Promise<WordItem[]> {
-  const pId = profileId !== undefined ? profileId : getActiveProfileId();
-  try {
-    await apiUpdateWord(updatedWord);
-    return await loadWords(undefined, pId);
-  } catch (err) {
-    console.warn('[Storage] Server error on updateWord, falling back to local', err);
-    const words = await loadWords(undefined, pId);
-    const updated = words.map(w => (w.id === updatedWord.id ? updatedWord : w));
-    await saveWords(updated, pId);
-    return updated;
-  }
+export async function deleteLesson(lesson: string, language?: Language, profileId = getActiveProfileId(), scope = profileId): Promise<WordItem[]> {
+  return mutate({ id: crypto.randomUUID(), kind: 'deleteLesson', profileId, lesson, language, scope });
 }
-
-export async function deleteWord(id: string, profileId?: string): Promise<WordItem[]> {
-  const pId = profileId !== undefined ? profileId : getActiveProfileId();
-  try {
-    await apiDeleteWord(id);
-    return await loadWords(undefined, pId);
-  } catch (err) {
-    console.warn('[Storage] Server error on deleteWord, falling back to local', err);
-    const words = await loadWords(undefined, pId);
-    const updated = words.filter(w => w.id !== id);
-    await saveWords(updated, pId);
-    return updated;
-  }
+export async function recordReviewProgress(wordId: string, wasCorrect: boolean, profileId = getActiveProfileId(), promote = true): Promise<WordItem[]> {
+  return mutate({ id: crypto.randomUUID(), kind: 'review', profileId, targetId: wordId, wasCorrect, promote, reviewedAt: Date.now() });
 }
-
-export async function deleteLesson(lesson: string, language?: Language, profileId?: string): Promise<WordItem[]> {
-  const pId = profileId !== undefined ? profileId : getActiveProfileId();
-  try {
-    await apiDeleteLesson(lesson, language, pId);
-    return await loadWords(undefined, pId);
-  } catch (err) {
-    console.warn('[Storage] Server error on deleteLesson, falling back to local', err);
-    const words = await loadWords(undefined, pId);
-    const updated = words.filter(w => {
-      if (language) {
-        return !(w.lesson === lesson && w.language === language);
-      }
-      return w.lesson !== lesson;
-    });
-    await saveWords(updated, pId);
-    return updated;
-  }
+export async function resetReviewProgress(profileId = getActiveProfileId()): Promise<WordItem[]> {
+  return mutate({ id: crypto.randomUUID(), kind: 'resetProgress', profileId });
 }
-
-export async function recordReviewProgress(wordId: string, wasCorrect: boolean, profileId?: string): Promise<WordItem[]> {
-  const pId = profileId !== undefined ? profileId : getActiveProfileId();
-  try {
-    await apiRecordReview(wordId, wasCorrect, pId);
-    return await loadWords(undefined, pId);
-  } catch (err) {
-    console.warn('[Storage] Server error on recordReview, falling back to local', err);
-    const words = await loadWords(undefined, pId);
-    const updated = words.map(item => {
-      if (item.id !== wordId) return item;
-      let nextBox = item.box;
-      if (wasCorrect) {
-        nextBox = Math.min(5, item.box + 1);
-      } else {
-        nextBox = Math.max(1, item.box - 1);
-      }
-      return {
-        ...item,
-        box: nextBox,
-        correctCount: item.correctCount + (wasCorrect ? 1 : 0),
-        incorrectCount: item.incorrectCount + (wasCorrect ? 0 : 1),
-        lastReviewedAt: Date.now(),
-      };
-    });
-    await saveWords(updated, pId);
-    return updated;
-  }
+export async function resetToDefaults(profileId = getActiveProfileId()): Promise<WordItem[]> {
+  return mutate({ id: crypto.randomUUID(), kind: 'resetDefaults', profileId });
 }
-
-export async function resetReviewProgress(profileId?: string): Promise<WordItem[]> {
-  const pId = profileId !== undefined ? profileId : getActiveProfileId();
-  try {
-    const updated = await apiResetProgress(pId);
-    set(`${WORDS_STORAGE_KEY}_${pId}`, updated).catch(() => {});
-    return updated;
-  } catch (err) {
-    console.warn('[Storage] Server error on resetReviewProgress, falling back to local', err);
-    const words = await loadWords(undefined, pId);
-    const updated = words.map(w => ({
-      ...w,
-      box: 1,
-      correctCount: 0,
-      incorrectCount: 0,
-      lastReviewedAt: undefined,
-    }));
-    await saveWords(updated, pId);
-    return updated;
-  }
-}
-
-export async function resetToDefaults(profileId?: string): Promise<WordItem[]> {
-  const pId = profileId !== undefined ? profileId : getActiveProfileId();
-  try {
-    const updated = await apiResetToDefaults();
-    set(`${WORDS_STORAGE_KEY}_${pId}`, updated).catch(() => {});
-    return updated;
-  } catch (err) {
-    console.warn('[Storage] Server error on resetToDefaults, falling back to local', err);
-    await saveWords(INITIAL_WORDS, pId);
-    return INITIAL_WORDS;
-  }
-}
-
 export function loadSettings(): AppSettings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    if (raw) {
-      return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-    }
-  } catch {}
-  return DEFAULT_SETTINGS;
+  try { return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_STORAGE_KEY) || '{}') }; }
+  catch { return { ...DEFAULT_SETTINGS }; }
 }
-
 export async function loadSettingsAsync(): Promise<AppSettings> {
-  try {
-    const serverSettings = await apiGetSettings();
-    if (serverSettings) {
-      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(serverSettings));
-      return serverSettings;
-    }
-  } catch (err) {
-    console.warn('[Storage] Server settings unavailable, using local', err);
-  }
-  return loadSettings();
+  return serial(async () => {
+    const local = loadSettings();
+    const state = await readJournal();
+    if (!(await flush(state))) return local;
+    try {
+      const remote = await apiGetSettings();
+      const settings = { ...remote, geminiApiKey: local.geminiApiKey };
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      return settings;
+    } catch (error) { if (!retryable(error)) throw error; return local; }
+  });
 }
-
 export async function saveSettings(settings: AppSettings): Promise<void> {
-  try {
-    await apiSaveSettings(settings);
-  } catch (err) {
-    console.warn('[Storage] Failed to save settings to server', err);
-  }
-  try {
+  return serial(async () => {
+    const state = await readJournal();
+    await flush(state);
+    const { geminiApiKey: _key, aiAvailable: _available, ...preferences } = settings;
+    state.pending.push({ id: crypto.randomUUID(), kind: 'settings', profileId: getActiveProfileId(), settings: preferences });
+    await persist(state);
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  } catch {}
+    await flush(state);
+  });
 }
-
 export function exportWordsToJson(words: WordItem[]): string {
-  return JSON.stringify(
-    {
-      app: 'quasselstrippe',
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      wordCount: words.length,
-      words,
-    },
-    null,
-    2
-  );
+  return JSON.stringify({ app: 'quasselstrippe', version: 1, exportedAt: new Date().toISOString(), wordCount: words.length, words }, null, 2);
 }
-
-export async function getLearnerStats(profileId?: string, language?: Language): Promise<LearnerStats> {
-  const pId = profileId !== undefined ? profileId : getActiveProfileId();
-  try {
-    return await apiGetLearnerStats(pId, language);
-  } catch (err) {
-    console.warn('[Storage] Server error fetching learner stats, computing locally', err);
-    const words = await loadWords(language, pId);
-    const boxDistribution: Record<1 | 2 | 3 | 4 | 5, number> = {
-      1: 0,
-      2: 0,
-      3: 0,
-      4: 0,
-      5: 0,
-    };
-    let totalCorrect = 0;
-    let totalIncorrect = 0;
-
-    for (const w of words) {
-      const b = (w.box >= 1 && w.box <= 5 ? w.box : 1) as 1 | 2 | 3 | 4 | 5;
-      boxDistribution[b] = (boxDistribution[b] || 0) + 1;
-      totalCorrect += w.correctCount || 0;
-      totalIncorrect += w.incorrectCount || 0;
+export async function getLearnerStats(profileId = getActiveProfileId(), language?: Language): Promise<LearnerStats> {
+  return serial(async () => {
+    const state = await readJournal();
+    const words = (await loadWordsUnlocked(state, profileId)).filter(w => !language || w.language === language);
+    const key = `${profileId}:${language || 'all'}`;
+    if (!state.pending.length) {
+      try {
+        const stats = await apiGetLearnerStats(profileId, language);
+        state.stats[key] = stats; await persist(state); return stats;
+      } catch (error) { if (!retryable(error)) throw error; }
+      if (state.stats[key]) return state.stats[key];
     }
-
-    const totalWords = words.length;
-    const masteredWords = (boxDistribution[4] || 0) + (boxDistribution[5] || 0);
-    const learningWords = (boxDistribution[2] || 0) + (boxDistribution[3] || 0);
-    const newWords = boxDistribution[1] || 0;
-    const totalReviews = totalCorrect + totalIncorrect;
-    const accuracyRate = totalReviews > 0 ? Math.round((totalCorrect / totalReviews) * 100) : 0;
-
-    // Build local history points for past 14 days
-    const now = new Date();
-    const history: ReviewHistoryPoint[] = [];
-    for (let i = 13; i >= 0; i--) {
-      const dayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-      const dayStart = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate(), 0, 0, 0, 0).getTime();
-      const yyyy = dayDate.getFullYear();
-      const mm = String(dayDate.getMonth() + 1).padStart(2, '0');
-      const dd = String(dayDate.getDate()).padStart(2, '0');
-      const dateStr = `${yyyy}-${mm}-${dd}`;
-      const dayLabel = dayDate.toLocaleDateString('de-DE', { day: '2-digit', month: 'short' });
-
-      const progressFactor = Math.min(1, (14 - i) / 14);
-      const estimatedMastered = Math.round(masteredWords * progressFactor);
-      history.push({
-        date: dateStr,
-        dayLabel,
-        timestamp: dayStart,
-        reviewsCount: Math.round((totalReviews / 14) * (0.8 + Math.random() * 0.4)),
-        correctCount: Math.round((totalCorrect / 14) * (0.8 + Math.random() * 0.4)),
-        incorrectCount: Math.round((totalIncorrect / 14) * (0.8 + Math.random() * 0.4)),
-        accuracy: accuracyRate,
-        masteredCumulative: estimatedMastered,
-      });
-    }
-
-    const difficultWords: DifficultWordItem[] = words
-      .filter((w) => (w.incorrectCount || 0) > 0)
-      .sort((a, b) => (b.incorrectCount || 0) - (a.incorrectCount || 0))
-      .slice(0, 6)
-      .map((w) => ({
-        id: w.id,
-        word: w.word,
-        translation: w.translation,
-        language: w.language,
-        box: w.box,
-        incorrectCount: w.incorrectCount,
-        correctCount: w.correctCount,
-      }));
-
-    return {
-      profileId: pId,
-      language,
-      totalWords,
-      masteredWords,
-      learningWords,
-      newWords,
-      boxDistribution,
-      totalReviews,
-      correctReviews: totalCorrect,
-      incorrectReviews: totalIncorrect,
-      accuracyRate,
-      streakDays: Math.min(7, totalReviews > 0 ? 3 : 0),
-      history,
-      difficultWords,
-    };
-  }
+    const boxDistribution: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    let correct = 0, incorrect = 0;
+    for (const w of words) { boxDistribution[w.box as 1 | 2 | 3 | 4 | 5]++; correct += w.correctCount; incorrect += w.incorrectCount; }
+    return { profileId, language, totalWords: words.length, masteredWords: boxDistribution[4] + boxDistribution[5],
+      learningWords: boxDistribution[2] + boxDistribution[3], newWords: boxDistribution[1], boxDistribution,
+      totalReviews: correct + incorrect, correctReviews: correct, incorrectReviews: incorrect,
+      accuracyRate: correct + incorrect ? Math.round(correct / (correct + incorrect) * 100) : 0,
+      streakDays: 0, history: [], historyAvailable: false,
+      difficultWords: words.filter(w => w.incorrectCount > 0).sort((a, b) => b.incorrectCount - a.incorrectCount).slice(0, 6) };
+  });
 }
-

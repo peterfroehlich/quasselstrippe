@@ -1,7 +1,9 @@
 import express from 'express';
-import cors from 'cors';
+import { randomBytes } from 'node:crypto';
+import { createAuth } from './auth.js';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import { getDatabase, checkDatabaseHealth, closeDatabase } from './db/database.js';
 import { wordsRouter } from './routes/words.js';
@@ -10,6 +12,7 @@ import { settingsRouter } from './routes/settings.js';
 import { aiRouter } from './routes/ai.js';
 
 dotenv.config();
+dotenv.config({ path: fileURLToPath(new URL('../../.env', import.meta.url)) });
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -19,7 +22,12 @@ let isShuttingDown = false;
 getDatabase();
 
 // Middleware
-app.use(cors());
+let appPassword = process.env.APP_PASSWORD;
+if (!appPassword && process.env.NODE_ENV !== 'production') {
+  appPassword = randomBytes(18).toString('base64url');
+  console.log(`[Auth] Development login password: ${appPassword}`);
+}
+const auth = createAuth(appPassword || '');
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -94,6 +102,10 @@ app.get('/api/info', (_req, res) => {
     uptime: Math.floor(process.uptime()),
   });
 });
+
+// All application data and AI calls require a signed, HttpOnly session.
+app.use('/api/auth', auth.router);
+app.use('/api', auth.sameOrigin, auth.requireAuth);
 
 // API Routes
 app.use('/api/words', wordsRouter);

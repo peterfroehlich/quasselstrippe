@@ -55,6 +55,7 @@ export interface WorksheetAnalysisResponse {
 
 export interface AppSettings {
   geminiApiKey: string;
+  aiAvailable?: boolean;
   activeLanguage: Language;
   speechRate: number;
   autoPlayAudio: boolean;
@@ -105,6 +106,7 @@ export interface LearnerStats {
   incorrectReviews: number;
   accuracyRate: number; // 0 to 100
   streakDays: number;
+  historyAvailable?: boolean;
   history: ReviewHistoryPoint[];
   difficultWords: DifficultWordItem[];
 }

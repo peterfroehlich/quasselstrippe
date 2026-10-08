@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Volume2, Check, ArrowRight, Lightbulb, RotateCcw, Award } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { WordItem, Language } from '../../types/vocabulary';
@@ -7,13 +7,15 @@ import { speechService } from '../../services/speech';
 interface SpellingViewProps {
   words: WordItem[];
   language: Language;
-  onRecordReview: (wordId: string, wasCorrect: boolean) => void;
+  autoPlayAudio?: boolean;
+  onRecordReview: (wordId: string, wasCorrect: boolean, promote?: boolean) => Promise<void>;
   onRestart: () => void;
 }
 
 export const SpellingView: React.FC<SpellingViewProps> = ({
   words,
   language,
+  autoPlayAudio = true,
   onRecordReview,
   onRestart,
 }) => {
@@ -28,29 +30,16 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const wordsIdFingerprint = useMemo(() => {
-    return words.map(w => w.id).sort().join(',');
-  }, [words]);
 
-  useEffect(() => {
-    setSpellingWords([...words]);
-    setCurrentIndex(0);
-    setUserInput('');
-    setIsSubmitted(false);
-    setIsCorrect(null);
-    setRevealedHints(0);
-    setScore(0);
-    setIsFinished(false);
-  }, [wordsIdFingerprint]);
 
   const currentWord = spellingWords[currentIndex];
 
   useEffect(() => {
     if (currentWord && !isFinished && !isSubmitted) {
-      speechService.speak(currentWord.word, language);
+      if (autoPlayAudio) speechService.speak(currentWord.word, language);
       inputRef.current?.focus();
     }
-  }, [currentIndex, currentWord, language, isFinished, isSubmitted]);
+  }, [currentIndex, currentWord, language, isFinished, isSubmitted, autoPlayAudio]);
 
   // Normalize input and target word: trim, lowercase, ignore punctuation/apostrophes/quotes, collapse spaces
   const normalize = (str: string) =>
@@ -60,7 +49,7 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
       .replace(/[.,!?;:'"’‘`´]/g, '')
       .replace(/\s+/g, ' ');
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (isSubmitted || !currentWord || !userInput.trim()) return;
 
@@ -68,10 +57,11 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
     setIsCorrect(correct);
     setIsSubmitted(true);
 
+    try { await onRecordReview(currentWord.id, correct, revealedHints === 0); }
+    catch { setIsSubmitted(false); setIsCorrect(null); return; }
     if (correct) {
       setScore(prev => prev + 1);
     }
-    onRecordReview(currentWord.id, correct);
   };
 
   const handleNext = () => {
@@ -93,6 +83,9 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
   // Keyboard shortcut: Press Enter to proceed to next word when result is shown
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (document.querySelector('[role=dialog]')) return;
+      const target = e.target as HTMLElement;
+      if (target.isContentEditable || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') return;
       if (e.key === 'Enter' && isSubmitted) {
         e.preventDefault();
         handleNext();
@@ -100,7 +93,7 @@ export const SpellingView: React.FC<SpellingViewProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isSubmitted, currentIndex, spellingWords.length]);
+  });
 
   const handleRevealHint = () => {
     if (!currentWord) return;

@@ -28,13 +28,15 @@ import { AudioButton } from '../common/AudioButton';
 interface WorksheetScannerProps {
   language: Language;
   geminiApiKey: string;
-  onAddWords: (newWords: WordItem[]) => void;
+  aiAvailable?: boolean;
+  onAddWords: (newWords: WordItem[]) => Promise<void>;
   onOpenSettings: () => void;
 }
 
 export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
   language,
   geminiApiKey,
+  aiAvailable,
   onAddWords,
   onOpenSettings,
 }) => {
@@ -42,6 +44,8 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>('image/jpeg');
   const [lessonName, setLessonName] = useState<string>('');
+  const savingRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<{
@@ -107,7 +111,7 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
       return;
     }
 
-    if (!geminiApiKey) {
+    if (!geminiApiKey && !aiAvailable) {
       setError('Für die automatische Foto-Erkennung mit deiner eigenen Kamera/Datei wird ein Gemini API-Key benötigt. Klicke auf "Einstellungen", um deinen Key einzugeben, oder teste die Erkennung mit einem unserer Beispiel-Arbeitsblätter!');
       return;
     }
@@ -167,8 +171,8 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
     setAnalysisResult({ ...analysisResult, words: updated });
   };
 
-  const handleSaveToCollection = () => {
-    if (!analysisResult) return;
+  const handleSaveToCollection = async () => {
+    if (!analysisResult || savingRef.current) return;
 
     const selectedWords = analysisResult.words.filter(w => w.selected !== false);
     if (selectedWords.length === 0) {
@@ -180,8 +184,8 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
 
     const newItems: WordItem[] = selectedWords.map((candidate, idx) => ({
       id: `${language}-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
-      word: candidate.word.trim(),
-      translation: candidate.translation.trim(),
+      word: (candidate.word || '').trim(),
+      translation: (candidate.translation || '').trim(),
       language,
       lesson: finalLesson,
       partOfSpeech: candidate.partOfSpeech || 'noun',
@@ -195,7 +199,10 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
       createdAt: Date.now(),
     }));
 
-    onAddWords(newItems);
+    savingRef.current = true; setIsSaving(true);
+    try { await onAddWords(newItems); }
+    catch (error) { setError((error as Error).message); return; }
+    finally { savingRef.current = false; setIsSaving(false); }
     setAddedSuccessCount(newItems.length);
     setAnalysisResult(null);
     setSelectedFile(null);
@@ -639,7 +646,8 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
               <button
                 type="button"
                 onClick={handleSaveToCollection}
-                disabled={selectedCount === 0}
+                disabled={selectedCount === 0 || isSaving}
+              aria-busy={isSaving}
                 className="btn btn-success"
               >
                 <Plus size={16} />
@@ -778,7 +786,8 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
             <button
               type="button"
               onClick={handleSaveToCollection}
-              disabled={selectedCount === 0}
+              disabled={selectedCount === 0 || isSaving}
+              aria-busy={isSaving}
               className="btn btn-success btn-lg"
             >
               <Check size={18} />

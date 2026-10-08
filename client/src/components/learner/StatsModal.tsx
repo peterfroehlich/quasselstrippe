@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import { useModal } from '../common/useModal';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X,
   Trophy,
@@ -32,7 +33,9 @@ export const StatsModal: React.FC<StatsModalProps> = ({
   currentLanguage,
   onProgressReset,
 }) => {
+  const requestVersion = useRef(0);
   const [stats, setStats] = useState<LearnerStats | null>(null);
+  const [statsError, setStatsError] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedLanguage, setSelectedLanguage] = useState<Language | 'all'>(currentLanguage);
   const [selectedTimeframe, setSelectedTimeframe] = useState<'7d' | '14d'>('14d');
@@ -40,31 +43,35 @@ export const StatsModal: React.FC<StatsModalProps> = ({
   const [hoveredPoint, setHoveredPoint] = useState<ReviewHistoryPoint | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  // Sync language selection when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      setSelectedLanguage(currentLanguage);
-      loadStats(currentLanguage);
-    }
-  }, [isOpen, currentLanguage, activeProfile?.id]);
-
-  const loadStats = async (lang: Language | 'all') => {
-    setLoading(true);
+  const loadStats = useCallback(async (lang: Language | 'all') => {
+    const version = ++requestVersion.current;
     try {
       const data = await getLearnerStats(
         activeProfile?.id,
         lang === 'all' ? undefined : lang
       );
-      setStats(data);
+      if (version === requestVersion.current) { setStats(data); setStatsError(''); }
     } catch (err) {
-      console.error('Failed to load stats:', err);
+      setStatsError(err instanceof Error ? err.message : 'Statistik konnte nicht geladen werden.');
     } finally {
-      setLoading(false);
+      await Promise.resolve();
+      if (version === requestVersion.current) setLoading(false);
     }
-  };
+  }, [activeProfile]);
+
+  useEffect(() => {
+    const version = ++requestVersion.current;
+    getLearnerStats(activeProfile?.id, currentLanguage).then(data => {
+      if (version === requestVersion.current) { setStats(data); setStatsError(''); }
+    }).catch(error => {
+      if (version === requestVersion.current) setStatsError(error.message);
+    }).finally(() => { if (version === requestVersion.current) setLoading(false); });
+    return () => { requestVersion.current += 1; };
+  }, [activeProfile?.id, currentLanguage]);
 
   const handleLanguageFilterChange = (lang: Language | 'all') => {
     setSelectedLanguage(lang);
+    setLoading(true);
     loadStats(lang);
   };
 
@@ -81,9 +88,11 @@ export const StatsModal: React.FC<StatsModalProps> = ({
     }
   };
 
+  const modalRef = useModal(isOpen, onClose);
+
   if (!isOpen) return null;
 
-  // Filter history points based on timeframe
+  // Filter genuine history points based on timeframe
   const rawHistory = stats?.history || [];
   const displayHistory = selectedTimeframe === '7d' ? rawHistory.slice(-7) : rawHistory;
 
@@ -144,6 +153,11 @@ export const StatsModal: React.FC<StatsModalProps> = ({
       onClick={onClose}
     >
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Lernstatistik"
+        tabIndex={-1}
         className="glass-panel animate-fade-in"
         style={{
           width: '100%',
@@ -159,6 +173,8 @@ export const StatsModal: React.FC<StatsModalProps> = ({
         }}
         onClick={(e) => e.stopPropagation()}
       >
+        {stats?.historyAvailable === false && <p role="status">Verlauf und Lernserie sind offline noch nicht verfügbar. Die Übersicht zeigt deinen gespeicherten Fortschritt.</p>}
+        {statsError && <p role="alert">{statsError}</p>}
         {/* Top Header Bar */}
         <div
           style={{
@@ -392,12 +408,12 @@ export const StatsModal: React.FC<StatsModalProps> = ({
                 </div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4rem' }}>
                   <span style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--warning)' }}>
-                    {stats.streakDays}
+                    {stats.historyAvailable === false ? '–' : stats.streakDays}
                   </span>
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Tage</span>
                 </div>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  {stats.streakDays > 0 ? 'Toller Rhythmus! Weiter so' : 'Heute noch nicht geübt'}
+                  {stats.historyAvailable === false ? 'Offline nicht verfügbar' : stats.streakDays > 0 ? 'Toller Rhythmus! Weiter so' : 'Heute noch nicht geübt'}
                 </span>
               </div>
 

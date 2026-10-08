@@ -1,3 +1,4 @@
+import { isReviewDue } from '../../services/learning';
 import React, { useState, useMemo } from 'react';
 import { 
   Layers, 
@@ -19,9 +20,10 @@ import { WritingView } from './WritingView';
 interface LearnerDashboardProps {
   words: WordItem[];
   language: Language;
-  onRecordReview: (wordId: string, wasCorrect: boolean) => void;
+  onRecordReview: (wordId: string, wasCorrect: boolean, promote?: boolean) => Promise<void>;
   autoPlayAudio: boolean;
   geminiApiKey?: string;
+  aiAvailable?: boolean;
 }
 
 export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
@@ -34,6 +36,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<StudyMode>('flashcards');
   const [selectedLesson, setSelectedLesson] = useState<string>('all');
   const [filterDifficulty, setFilterDifficulty] = useState<'all' | 'difficult'>('all');
+  const [reviewFilter, setReviewFilter] = useState<'due' | 'all'>('due');
   const [shuffleKey, setShuffleKey] = useState(0);
 
   const languageWords = useMemo(() => {
@@ -46,7 +49,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
   }, [languageWords]);
 
   const activeWordIds = useMemo(() => {
-    let pool = languageWords;
+    let pool = reviewFilter === 'due' ? languageWords.filter(w => isReviewDue(w)) : languageWords;
     if (selectedLesson !== 'all') {
       pool = pool.filter(w => w.lesson === selectedLesson);
     }
@@ -55,7 +58,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
     }
     return [...pool].sort(() => 0.5 - Math.random()).map(w => w.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language, selectedLesson, filterDifficulty, shuffleKey, languageWords.map(w => w.id).sort().join(',')]);
+  }, [language, selectedLesson, filterDifficulty, reviewFilter, shuffleKey, languageWords.map(w => w.id).sort().join(',')]);
 
   const activeWords = useMemo(() => {
     const wordMap = new Map(languageWords.map(w => [w.id, w]));
@@ -71,6 +74,10 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
 
   return (
     <div style={{ maxWidth: '980px', margin: '0 auto', padding: '1.25rem 0.85rem calc(3rem + env(safe-area-inset-bottom, 0px)) 0.85rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        <button className={`btn btn-sm ${reviewFilter === 'due' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setReviewFilter('due')}>Heute fällig ({languageWords.filter(w => isReviewDue(w)).length})</button>
+        <button className={`btn btn-sm ${reviewFilter === 'all' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setReviewFilter('all')}>Alle Wörter üben</button>
+      </div>
       <div className="learner-filter-bar">
         <div className="learner-filter-select-wrapper" style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: '1 1 280px' }}>
           <Filter size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
@@ -205,6 +212,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
             onClick={() => {
               setSelectedLesson('all');
               setFilterDifficulty('all');
+              setReviewFilter('all');
             }}
             className="btn btn-secondary"
           >
@@ -212,7 +220,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
           </button>
         </div>
       ) : (
-        <div key={`${activeTab}-${shuffleKey}-${selectedLesson}-${filterDifficulty}`}>
+        <div key={`${activeTab}-${shuffleKey}-${selectedLesson}-${filterDifficulty}-${reviewFilter}-${activeWordIds.join(",")}`}>
           {activeTab === 'flashcards' && (
             <FlashcardView
               words={activeWords}
@@ -225,6 +233,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
 
           {activeTab === 'quiz' && (
             <QuizView
+              autoPlayAudio={autoPlayAudio}
               words={activeWords}
               allWords={languageWords}
               language={language}
@@ -235,6 +244,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
 
           {activeTab === 'writing' && (
             <WritingView
+              autoPlayAudio={autoPlayAudio}
               words={activeWords}
               allWords={languageWords}
               language={language}
@@ -249,6 +259,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
 
           {activeTab === 'spelling' && (
             <SpellingView
+              autoPlayAudio={autoPlayAudio}
               words={activeWords}
               language={language}
               onRecordReview={onRecordReview}

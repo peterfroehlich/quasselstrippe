@@ -7,6 +7,8 @@ metadata:
     app.kubernetes.io/name: quasselstrippe
 data:
   NODE_ENV: "production"
+  # Set true when the ingress serves this app exclusively over HTTPS.
+  COOKIE_SECURE: "false"
   PORT: "3001"
   DATABASE_PATH: "/data/quasselstrippe.db"
   BACKEND_URL: "http://quasselstrippe-backend:3001"

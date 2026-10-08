@@ -1,5 +1,6 @@
+import { validateWorksheet, validateGrade } from './validation';
 import type { Language, WorksheetAnalysisResponse, ExtractedWordCandidate, HandwritingGradeResponse } from '../types/vocabulary';
-import { apiAnalyzeWorksheet, apiGradeHandwriting } from './api';
+import { ApiError, apiAnalyzeWorksheet, apiGradeHandwriting } from './api';
 
 export interface SampleWorksheet {
   id: string;
@@ -195,9 +196,10 @@ export async function analyzeWorksheetWithGemini(
       apiKey,
     });
     if (serverResult && Array.isArray(serverResult.words)) {
-      return serverResult;
+      return validateWorksheet(serverResult, language, suggestedLesson);
     }
   } catch (serverErr) {
+    if (serverErr instanceof ApiError && !serverErr.retryable) throw serverErr;
     console.warn('[Gemini] Server analysis unavailable or failed, falling back to direct client call', serverErr);
   }
 
@@ -303,19 +305,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
         throw new Error('Gemini-Antwort konnte nicht als Vokabelliste interpretiert werden.');
       }
 
-      const wordsWithSelection = (parsed.words || []).map((w: ExtractedWordCandidate) => ({
-        ...w,
-        language,
-        lesson: suggestedLesson || parsed.lessonName || 'Neue Lektion',
-        selected: true,
-      }));
-
-      return {
-        detectedTopic: parsed.detectedTopic || 'Arbeitsblatt Vokabeln',
-        lessonName: suggestedLesson || parsed.lessonName || 'Neue Lektion',
-        summary: parsed.summary,
-        words: wordsWithSelection,
-      };
+      return validateWorksheet(parsed, language, suggestedLesson);
     } catch (err: unknown) {
       console.warn(`Model ${model} failed, trying fallback if available`, err);
       lastError = err instanceof Error ? err : new Error(String(err));
@@ -343,8 +333,9 @@ export async function gradeHandwriting(params: {
       language,
       apiKey,
     });
-    return serverResult;
+    return validateGrade(serverResult, expectedWord);
   } catch (serverErr) {
+    if (serverErr instanceof ApiError && !serverErr.retryable) throw serverErr;
     console.warn('[Gemini] Server handwriting grading unavailable or failed, falling back to direct client call', serverErr);
   }
 
@@ -443,7 +434,8 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 
       // Gracefully retry without thinkingConfig if the model endpoint rejects thinking parameters
       if (!response.ok && response.status === 400 && genConfig.thinkingConfig) {
-        const { thinkingConfig, ...plainConfig } = genConfig;
+        const plainConfig = { ...genConfig };
+        delete plainConfig.thinkingConfig;
         response = await sendRequest(plainConfig);
       }
 
@@ -470,49 +462,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
         throw new Error('Gemini-Antwort konnte nicht ausgewertet werden.');
       }
 
-      // Deterministic validation of initial letter capitalization
-      const expLetter = expectedWord.trim().match(/^\p{L}/u)?.[0];
-      const recLetter = (parsed.recognizedWord || '').trim().match(/^\p{L}/u)?.[0];
-      let hasCapitalizationMismatch = false;
-      let capNotice = '';
-
-      if (expLetter && recLetter) {
-        const isExpUpper = expLetter === expLetter.toUpperCase() && expLetter !== expLetter.toLowerCase();
-        const isRecUpper = recLetter === recLetter.toUpperCase() && recLetter !== recLetter.toLowerCase();
-        if (isExpUpper !== isRecUpper) {
-          hasCapitalizationMismatch = true;
-          capNotice = isExpUpper
-            ? `Achte auf den Wortanfang: "${expectedWord}" beginnt mit einem Großbuchstaben ("${expLetter}").`
-            : `Achte auf den Wortanfang: "${expectedWord}" beginnt mit einem Kleinbuchstaben ("${expLetter}").`;
-        }
-      }
-
-      const capitalizationError = Boolean(parsed.capitalizationError || hasCapitalizationMismatch);
-      let isCorrect = Boolean(parsed.isCorrect);
-      let score = typeof parsed.score === 'number' ? parsed.score : isCorrect ? 100 : 40;
-      let schoolGrade = parsed.schoolGrade || (isCorrect ? '1 (Sehr gut)' : '5 (Mangelhaft)');
-      let feedback = parsed.feedback || (isCorrect ? 'Super gemacht!' : 'Übe dieses Wort noch einmal.');
-
-      if (capitalizationError) {
-        isCorrect = false;
-        score = Math.min(score, 70);
-        if (schoolGrade.startsWith('1') || schoolGrade.startsWith('2')) {
-          schoolGrade = '3 (Befriedigend)';
-        }
-        if (capNotice && !feedback.toLowerCase().includes('groß') && !feedback.toLowerCase().includes('klein')) {
-          feedback = `${feedback} ${capNotice}`.trim();
-        }
-      }
-
-      return {
-        recognizedWord: parsed.recognizedWord || '(unbekannt)',
-        isCorrect,
-        score,
-        schoolGrade,
-        feedback,
-        capitalizationError,
-        model,
-      };
+      return { ...validateGrade(parsed, expectedWord), model };
     } catch (err: unknown) {
       console.warn(`Model ${model} failed, trying fallback if available`, err);
       lastError = err instanceof Error ? err : new Error(String(err));

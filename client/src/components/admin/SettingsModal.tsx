@@ -1,3 +1,4 @@
+import { useModal } from '../common/useModal';
 import React, { useState } from 'react';
 import { 
   X, 
@@ -16,8 +17,8 @@ interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   settings: AppSettings;
-  onSaveSettings: (settings: AppSettings) => void;
-  onResetToDefaults: () => void;
+  onSaveSettings: (settings: AppSettings) => Promise<void>;
+  onResetToDefaults: () => Promise<void>;
   currentLanguage: Language;
 }
 
@@ -31,8 +32,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const [apiKey, setApiKey] = useState(settings.geminiApiKey || '');
   const [speechRate, setSpeechRate] = useState(settings.speechRate || 0.9);
+  const [autoPlayAudio, setAutoPlayAudio] = useState(settings.autoPlayAudio);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState<string>('');
+
+  const modalRef = useModal(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -99,13 +103,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleSave = () => {
-    onSaveSettings({
+  const handleSave = async () => {
+    try { await onSaveSettings({
       ...settings,
       geminiApiKey: apiKey.trim(),
       speechRate,
+      autoPlayAudio,
     });
-    onClose();
+    onClose(); } catch (error) { setTestStatus('error'); setTestMessage((error as Error).message); }
   };
 
   const handleTestSpeech = () => {
@@ -131,6 +136,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       onClick={onClose}
     >
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Einstellungen"
+        tabIndex={-1}
         className="glass-panel animate-fade-in"
         style={{
           width: '100%',
@@ -153,9 +163,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             type="button"
             onClick={onClose}
             className="btn btn-ghost btn-sm"
+            aria-label="Schließen"
             style={{ padding: '0.4rem' }}
           >
-            <X size={18} />
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 
@@ -165,7 +176,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <span>Google Gemini API-Key</span>
           </label>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-            Wird für die automatische Erkennung von Schul-Arbeitsblättern benötigt. Bleibt ausschließlich lokal in deinem Browser gespeichert.
+            Wird für die automatische Erkennung von Schul-Arbeitsblättern benötigt. Bleibt in diesem Browser gespeichert und wird nur für deine KI-Anfragen übertragen. Ein auf dem Server konfigurierter Schlüssel muss hier nicht eingetragen werden.
           </p>
 
           <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
@@ -206,7 +217,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
               <ShieldCheck size={14} color="var(--success)" />
-              Sicher im Browser (localStorage)
+              Persönlicher Schlüssel in diesem Browser
             </span>
             <a
               href="https://aistudio.google.com/app/apikey"
@@ -255,6 +266,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
 
+        <label style={{ display: 'flex', gap: '0.6rem', marginBottom: '1.5rem' }}>
+          <input type="checkbox" checked={autoPlayAudio} onChange={event => setAutoPlayAudio(event.target.checked)} />
+          Wörter automatisch vorlesen
+        </label>
         <div style={{ marginBottom: '2rem', borderTop: '1px solid var(--border-subtle)', paddingTop: '1.25rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -267,10 +282,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
             <button
               type="button"
-              onClick={() => {
-                if (confirm('Möchtest du die Vokabelsammlung wirklich auf die Werkseinstellungen mit den Schul-Beispiellektionen zurücksetzen?')) {
-                  onResetToDefaults();
-                  onClose();
+              onClick={async () => {
+                if (confirm('Alle Vokabeln und Lernfortschritte ALLER Profile löschen und durch die Beispiellektionen ersetzen?')) {
+                  try { await onResetToDefaults(); onClose(); } catch (error) { setTestStatus('error'); setTestMessage((error as Error).message); }
                 }
               }}
               className="btn btn-ghost btn-sm"

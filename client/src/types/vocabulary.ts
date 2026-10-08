@@ -99,6 +99,7 @@ export type AppMode = 'learner' | 'admin';
 
 export interface AppSettings {
   geminiApiKey: string;
+  aiAvailable?: boolean;
   activeLanguage: Language;
   speechRate: number; // 0.8 - 1.2
   autoPlayAudio: boolean;
@@ -149,6 +150,7 @@ export interface LearnerStats {
   incorrectReviews: number;
   accuracyRate: number; // 0 to 100
   streakDays: number;
+  historyAvailable?: boolean;
   history: ReviewHistoryPoint[];
   difficultWords: DifficultWordItem[];
 }
