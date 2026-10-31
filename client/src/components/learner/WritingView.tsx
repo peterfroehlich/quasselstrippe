@@ -363,6 +363,8 @@ export const WritingView: React.FC<WritingViewProps> = ({
 
   // Pointer event handlers with palm rejection & stylus preemption
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Keep pen presses from starting browser selection or compatibility mouse actions.
+    e.preventDefault();
     if (isSubmitted || isGrading) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -976,6 +978,9 @@ export const WritingView: React.FC<WritingViewProps> = ({
 
         {/* Canvas Wrapper with Ruled Notebook Paper Background */}
         <div 
+          className="handwriting-surface"
+          onContextMenu={(e) => e.preventDefault()}
+          onDragStart={(e) => e.preventDefault()}
           style={{ 
             position: 'relative',
             borderRadius: 'var(--radius-md)',
@@ -996,6 +1001,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
         >
           <canvas
             ref={canvasRef}
+            draggable={false}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}

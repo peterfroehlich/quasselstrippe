@@ -391,6 +391,14 @@ button, a, input, select, textarea, [role="button"], .speaker-btn, .flip-card-in
   user-select: none;
 }
 
+/* Keep the entire handwriting area out of browser selection and long-press menus. */
+.handwriting-surface,
+.handwriting-surface * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* Mobile & Responsive Utilities */
 .mobile-only {
   display: none !important;
