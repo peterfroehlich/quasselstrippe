@@ -20,7 +20,7 @@
     "docker:build:frontend": "docker build -f Dockerfile.frontend -t quasselstrippe-frontend .",
     "docker:run": "docker compose up --build",
     "test": "npm run build:server && node --test tests/*.test.mjs",
-    "test:e2e": "node --test tests/browser.e2e.mjs"
+    "test:e2e": "node --test tests/*.e2e.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.0",

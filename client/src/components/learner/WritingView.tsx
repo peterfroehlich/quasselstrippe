@@ -20,6 +20,7 @@ import {
 import confetti from 'canvas-confetti';
 import type { WordItem, Language, HandwritingGradeResponse } from '../../types/vocabulary';
 import { speechService } from '../../services/speech';
+import { recordCorrection, recordPenRecovery } from '../../telemetry';
 import { gradeHandwriting } from '../../services/gemini';
 import { AudioButton } from '../common/AudioButton';
 
@@ -468,6 +469,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
         const rect = e.currentTarget.getBoundingClientRect();
         if (e.clientX < rect.left || e.clientX >= rect.right ||
             e.clientY < rect.top || e.clientY >= rect.bottom) return;
+        recordPenRecovery();
         handlePointerDown(e);
         return;
       }
@@ -653,6 +655,8 @@ export const WritingView: React.FC<WritingViewProps> = ({
     setGradingError(null);
 
     const base64Data = exportCanvasBase64();
+    const correctionStarted = performance.now();
+    let correctionFinished = false;
 
     try {
       const result = await gradeHandwriting({
@@ -662,6 +666,8 @@ export const WritingView: React.FC<WritingViewProps> = ({
         apiKey,
       });
 
+      correctionFinished = true;
+      recordCorrection(performance.now() - correctionStarted, 'success');
       await onRecordReview(currentWord.id, result.isCorrect);
       setGradeResult(result);
       setIsSubmitted(true);
@@ -672,6 +678,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
       }
 
     } catch (err: any) {
+      if (!correctionFinished) recordCorrection(performance.now() - correctionStarted, 'error');
       console.error('Grading error', err);
       setGradingError(err?.message || 'Fehler beim Korrigieren durch Gemini.');
     } finally {

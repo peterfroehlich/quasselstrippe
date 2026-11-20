@@ -1,3 +1,5 @@
+limit_req_zone $binary_remote_addr zone=telemetry:1m rate=2r/s;
+
 server {
     listen 80;
     server_name _;
@@ -15,6 +17,16 @@ server {
         default_type text/plain;
         return 200 "healthy\n";
     }
+
+    location = /runtime-config.js {
+        root /usr/share/nginx/html;
+        add_header Cache-Control "no-store";
+    }
+
+    ${RUM_LOCATION}
+
+    # Never send unknown telemetry paths to the SPA or collector.
+    location /telemetry { return 404; }
 
     # Reverse proxy to backend API service
     location /api/ {

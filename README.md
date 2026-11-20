@@ -241,3 +241,29 @@ Browserprüfungen: zuerst `npx playwright install chromium`, dann nach dem Build
 
 Dieses Projekt ist als freie Software unter der **[GNU Affero General Public License v3 (AGPL-3.0)](LICENSE)** lizenziert.
 
+
+### Optional browser telemetry
+
+Browser monitoring is **off by default** in source builds and containers. With it
+disabled, the Dash0 SDK is not loaded and no monitoring requests or session
+storage are created. No Dash0 account or configuration is required to use the app.
+
+To opt in when running the frontend Nginx container, set both `RUM_ENABLED=true`
+and `RUM_COLLECTOR_URL` to your OTLP/HTTP collector origin (without `/v1/logs`
+or `/v1/traces`). Supply the endpoint at runtime through your deployment system;
+do not commit endpoints or credentials to this repository. The collector handles
+authentication to your observability provider. Do not put tokens in Vite variables.
+
+The browser sees only the same-origin `/telemetry` proxy. The proxy accepts POSTs
+to the logs/traces routes, limits bodies to 512 KiB, rate limits clients, and strips
+cookies and authorization headers. Missing either setting disables monitoring.
+Restart the frontend container after changing these settings.
+
+Enabled monitoring collects page/network timing, Web Vitals, anonymous session
+identifiers, fixed error categories, correction duration/outcome, and rate-limited
+pen-recovery events. URLs are reduced to the app origin and `/`; request/response
+bodies, headers, pupil names, vocabulary answers, handwriting images, console
+messages, and session replay are not captured. Direct Gemini traffic is excluded.
+
+Run `node --test tests/telemetry.e2e.mjs` (with Playwright Chromium installed) to
+check disabled behavior and inspect enabled payloads for private test markers.

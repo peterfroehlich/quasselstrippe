@@ -1,14 +1,38 @@
 #!/bin/sh
-set -e
+set -eu
 
-# Default backend URL if not set
 export BACKEND_URL="${BACKEND_URL:-http://quasselstrippe-backend:3001}"
+export RUM_LOCATION=''
+printf 'window.__QUASSELSTRIPPE_RUM__ = false;\n' > /usr/share/nginx/html/runtime-config.js
 
-echo "[Frontend Entrypoint] Configuring Nginx reverse proxy with BACKEND_URL=${BACKEND_URL}"
-
-# Substitute only ${BACKEND_URL} so that Nginx variables ($host, $uri, etc.) remain intact
-if command -v envsubst > /dev/null 2>&1; then
-    envsubst '${BACKEND_URL}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf
-else
-    sed "s|\${BACKEND_URL}|${BACKEND_URL}|g" /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf
+# Both settings are required. The endpoint is runtime-only, never browser config.
+if [ "${RUM_ENABLED:-false}" = true ] && [ -n "${RUM_COLLECTOR_URL:-}" ]; then
+    if ! printf '%s' "$RUM_COLLECTOR_URL" | grep -Eq '^https?://[a-zA-Z0-9.-]+(:[0-9]+)?/?$'; then
+        echo 'Invalid RUM_COLLECTOR_URL: expected an HTTP(S) origin' >&2
+        exit 1
+    fi
+    RUM_COLLECTOR_URL=${RUM_COLLECTOR_URL%/}
+    RUM_LOCATION=$(cat <<EOF
+    location ~ ^/telemetry/v1/(traces|logs)$ {
+        if (\$request_method != POST) { return 405; }
+        limit_req zone=telemetry burst=20 nodelay;
+        limit_req_status 429;
+        client_max_body_size 512k;
+        rewrite ^/telemetry(/v1/(traces|logs))\$ \$1 break;
+        proxy_pass ${RUM_COLLECTOR_URL};
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header X-Real-IP "";
+        proxy_set_header Origin "";
+        proxy_connect_timeout 2s;
+        proxy_read_timeout 5s;
+        access_log off;
+    }
+EOF
+)
+    export RUM_LOCATION
+    printf 'window.__QUASSELSTRIPPE_RUM__ = true;\n' > /usr/share/nginx/html/runtime-config.js
 fi
+
+envsubst '${BACKEND_URL} ${RUM_LOCATION}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf
