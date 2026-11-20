@@ -173,3 +173,34 @@ test('sparse pen samples form continuous ink through the final lift point', asyn
   });
   assert.deepEqual(gaps, [], 'No blank pixels between pen samples or before the lift point');
 });
+
+test('rapid pen re-contact survives delayed capture loss and unrelated pen events', async () => {
+  await page.getByRole('button', { name: 'Schreiben', exact: true }).click();
+  const canvas = page.locator('#root canvas'); await expect(canvas).toBeVisible();
+  const result = await canvas.evaluate(el => {
+    const box = el.getBoundingClientRect();
+    const fire = (type, x, y, buttons, id = 71, pressure = buttons ? 0.5 : 0, timestamp) => {
+      const event = new PointerEvent(type, { bubbles: true, pointerId: id, pointerType: 'pen',
+        isPrimary: true, clientX: box.left + x, clientY: box.top + y, buttons, pressure });
+      if (timestamp !== undefined) Object.defineProperty(event, 'timeStamp', { value: timestamp });
+      el.dispatchEvent(event);
+    };
+    const oldTime = performance.now() - 100;
+    fire('pointerdown', 80, 80, 1); fire('pointermove', 120, 80, 1); fire('pointerup', 140, 80, 0);
+    fire('pointerdown', 80, 120, 1);
+    fire('lostpointercapture', 140, 80, 0); // previous stroke, reused pen ID
+    fire('pointerup', 140, 80, 0, 71, 0, oldTime); // delayed old lift
+    fire('pointercancel', 140, 80, 0, 72); // another pointer
+    fire('pointerup', 140, 80, 0, 72);
+    fire('pointermove', 80, 120, 0); // transient hover
+    fire('pointermove', 120, 120, 1);
+    fire('pointermove', 160, 120, 0, 71, 0.5); // contact with pressure
+    fire('pointerup', 180, 120, 0);
+    fire('pointermove', 220, 120, 0); // real post-lift hover must not draw
+    const ctx = el.getContext('2d'); const scale = el.width / box.width;
+    const ink = (x, y) => ctx.getImageData(Math.floor(x * scale), Math.floor(y * scale), 1, 1).data[3] > 0;
+    return { first: ink(110, 80), second: ink(110, 120), pressure: ink(150, 120),
+      end: ink(175, 120), hover: ink(210, 120), bridge: ink(110, 100) };
+  });
+  assert.deepEqual(result, { first: true, second: true, pressure: true, end: true, hover: false, bridge: false });
+});
