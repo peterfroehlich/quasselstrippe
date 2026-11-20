@@ -50,7 +50,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTestStatus('testing');
     setTestMessage('Verbindung zu Google Gemini wird geprüft...');
 
-    const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.5-flash-lite'];
+    const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-4-hydrogen'];
     let connected = false;
     let lastErrorMsg = '';
 

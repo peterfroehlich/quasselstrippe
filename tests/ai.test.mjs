@@ -4,7 +4,7 @@ import express from 'express';
 import { aiRouter } from '../server/dist/routes/ai.js';
 import { closeDatabase } from '../server/dist/db/database.js';
 
-test('handwriting uses Hydrogen, ignores thought text, and falls back on API failure', async (t) => {
+test('handwriting uses Flash-Lite, ignores thought text, and falls back on API failure', async (t) => {
   const previousPath = process.env.DATABASE_PATH;
   process.env.DATABASE_PATH = ':memory:';
   const app = express();
@@ -13,11 +13,11 @@ test('handwriting uses Hydrogen, ignores thought text, and falls back on API fai
   await new Promise(resolve => server.once('listening', resolve));
   const originalFetch = globalThis.fetch;
   const calls = [];
-  let failHydrogen = false;
+  let failDefault = false;
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     const model = String(url).match(/models\/([^:]+):/)[1];
     calls.push({ model, config: JSON.parse(options.body).generationConfig });
-    if (failHydrogen && model === 'gemini-4-hydrogen') {
+    if (failDefault && model === 'gemini-3.5-flash-lite') {
       return Response.json({ error: { message: 'unavailable' } }, { status: 503 });
     }
     return Response.json({ candidates: [{ content: { parts: [
@@ -27,7 +27,7 @@ test('handwriting uses Hydrogen, ignores thought text, and falls back on API fai
   });
   try {
     for (const fallback of [false, true]) {
-      failHydrogen = fallback; calls.length = 0;
+      failDefault = fallback; calls.length = 0;
       const response = await originalFetch(`http://127.0.0.1:${server.address().port}/grade-handwriting`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ base64Data: 'dGVzdA==', expectedWord: 'cat', apiKey: 'test-only-key', language: 'en' }),
@@ -36,11 +36,15 @@ test('handwriting uses Hydrogen, ignores thought text, and falls back on API fai
       const result = await response.json();
       assert.equal(result.recognizedWord, 'cat');
       assert.equal('schoolGrade' in result, false);
-      assert.equal(result.model, fallback ? 'gemini-3.5-flash-lite' : 'gemini-4-hydrogen');
-      assert.deepEqual(calls.map(c => c.model), fallback ? ['gemini-4-hydrogen', 'gemini-3.5-flash-lite'] : ['gemini-4-hydrogen']);
+      assert.equal(result.model, fallback ? 'gemini-4-hydrogen' : 'gemini-3.5-flash-lite');
+      assert.deepEqual(calls.map(c => c.model), fallback ? ['gemini-3.5-flash-lite', 'gemini-4-hydrogen'] : ['gemini-3.5-flash-lite']);
       assert.equal(calls[0].config.thinkingConfig.thinkingLevel, 'low');
-      assert.equal(calls[0].config.temperature, undefined);
-      assert.equal(calls[0].config.maxOutputTokens, 65536);
+      assert.equal(calls[0].config.temperature, 0.1);
+      assert.equal(calls[0].config.maxOutputTokens, 2048);
+      if (fallback) {
+        assert.equal(calls[1].config.temperature, undefined);
+        assert.equal(calls[1].config.maxOutputTokens, 65536);
+      }
     }
   } finally {
     await new Promise(resolve => server.close(resolve)); closeDatabase();

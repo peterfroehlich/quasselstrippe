@@ -1,6 +1,6 @@
 import { test, before, beforeEach, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { chromium, expect } from '@playwright/test';
+import { chromium, webkit, expect } from '@playwright/test';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
@@ -22,7 +22,7 @@ before(async () => {
     processHandle.stdout.on('data', () => { if (logs.includes('server listening')) { clearTimeout(deadline); resolve(); } });
     processHandle.once('exit', () => { clearTimeout(deadline); reject(new Error(logs)); });
   });
-  browser = await chromium.launch({ headless: true });
+  browser = await (process.env.TEST_BROWSER === 'webkit' ? webkit : chromium).launch({ headless: true });
 });
 beforeEach(async () => {
   errors.length = 0;
@@ -199,8 +199,42 @@ test('rapid pen re-contact survives delayed capture loss and unrelated pen event
     fire('pointermove', 220, 120, 0); // real post-lift hover must not draw
     const ctx = el.getContext('2d'); const scale = el.width / box.width;
     const ink = (x, y) => ctx.getImageData(Math.floor(x * scale), Math.floor(y * scale), 1, 1).data[3] > 0;
-    return { first: ink(110, 80), second: ink(110, 120), pressure: ink(150, 120),
+    return { first: ink(110, 80), second: ink(130, 120), pressure: ink(150, 120),
       end: ink(175, 120), hover: ink(210, 120), bridge: ink(110, 100) };
   });
   assert.deepEqual(result, { first: true, second: true, pressure: true, end: true, hover: false, bridge: false });
+});
+
+test('pen contact resumes after a lift or cancellation without a new pointerdown', async () => {
+  await page.getByRole('button', { name: 'Schreiben', exact: true }).click();
+  const canvas = page.locator('#root canvas'); await expect(canvas).toBeVisible();
+  const result = await canvas.evaluate(el => {
+    const box = el.getBoundingClientRect();
+    const fire = (type, x, y, buttons, pointerType = 'pen') => el.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, pointerId: pointerType === 'pen' ? 71 : 72, pointerType, isPrimary: true,
+      clientX: box.left + x, clientY: box.top + y, buttons, pressure: buttons ? 0.5 : 0,
+    }));
+    fire('pointerdown', 80, 60, 1); fire('pointermove', 160, 60, 1); fire('pointerup', 180, 60, 0);
+    // Actual pen contact must recover, even if the browser omitted pointerdown.
+    fire('pointermove', 80, 100, 1); fire('pointermove', 160, 100, 1);
+    fire('pointercancel', 160, 100, 0);
+    fire('pointermove', 80, 140, 1); fire('pointermove', 160, 140, 1);
+    // A hover-only lift must separate strokes, not connect the next letter.
+    fire('pointermove', 180, 140, 0);
+    fire('pointermove', 80, 180, 1); fire('pointermove', 160, 180, 1); fire('pointerup', 180, 180, 0);
+    fire('pointermove', 220, 180, 0);
+    fire('pointermove', 80, 220, 1, 'touch'); fire('pointermove', 160, 220, 1, 'touch');
+    const ctx = el.getContext('2d'); const scale = el.width / box.width;
+    const ink = (x,y) => ctx.getImageData(Math.floor(x*scale),Math.floor(y*scale),1,1).data[3] > 0;
+    return { first: ink(120,60), afterLift: ink(120,100), afterCancel: ink(120,140),
+      afterHover: ink(120,180), bridge: ink(120,160), hover: ink(210,180), palm: ink(120,220) };
+  });
+  assert.deepEqual(result, { first:true,afterLift:true,afterCancel:true,afterHover:true,bridge:false,hover:false,palm:false });
+  await page.getByRole('button', { name: 'Rückgängig', exact: true }).click();
+  const undo = await canvas.evaluate(el => {
+    const scale = el.width/el.getBoundingClientRect().width; const ctx=el.getContext('2d');
+    const ink=y=>ctx.getImageData(Math.floor(120*scale),Math.floor(y*scale),1,1).data[3]>0;
+    return { previous:ink(140),last:ink(180) };
+  });
+  assert.deepEqual(undo,{previous:true,last:false});
 });
