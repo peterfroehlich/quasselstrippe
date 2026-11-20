@@ -14,6 +14,8 @@ test('handwriting uses Flash-Lite, ignores thought text, and falls back on API f
   const originalFetch = globalThis.fetch;
   const calls = [];
   let failDefault = false;
+  let recognizedWord = 'cat';
+  let providerCorrect = true;
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     const model = String(url).match(/models\/([^:]+):/)[1];
     calls.push({ model, config: JSON.parse(options.body).generationConfig });
@@ -22,7 +24,7 @@ test('handwriting uses Flash-Lite, ignores thought text, and falls back on API f
     }
     return Response.json({ candidates: [{ content: { parts: [
       { thought: true, text: 'Internal reasoning is not the JSON answer.' },
-      { text: JSON.stringify({ recognizedWord: 'cat', isCorrect: true, score: 100, schoolGrade: '1', feedback: 'Gut!', capitalizationError: false }) },
+      { text: JSON.stringify({ recognizedWord, isCorrect: providerCorrect, score: providerCorrect ? 100 : 70, schoolGrade: '1', feedback: 'Gut!', capitalizationError: !providerCorrect }) },
     ] } }] });
   });
   try {
@@ -45,6 +47,18 @@ test('handwriting uses Flash-Lite, ignores thought text, and falls back on API f
         assert.equal(calls[1].config.temperature, undefined);
         assert.equal(calls[1].config.maxOutputTokens, 65536);
       }
+    }
+    for (const [written, expected, correct] of [['CAT', 'cat', true], ['cAt', 'Cat', true], ['cat', 'CAT', true], ['DOG', 'cat', false]]) {
+      recognizedWord = written; providerCorrect = false; failDefault = false;
+      const response = await originalFetch(`http://127.0.0.1:${server.address().port}/grade-handwriting`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64Data: 'dGVzdA==', expectedWord: expected, apiKey: 'test-only-key', language: 'en' }),
+      });
+      assert.equal(response.status, 200);
+      const result = await response.json();
+      assert.equal(result.isCorrect, correct, `${written} vs ${expected}`);
+      assert.equal(result.capitalizationError, false);
+      if (correct) assert.equal(result.score, 100);
     }
   } finally {
     await new Promise(resolve => server.close(resolve)); closeDatabase();

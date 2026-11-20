@@ -680,25 +680,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
         apiKey,
       });
 
-      // Extra client-side validation for wrong initial capitalization
-      const expLetter = currentWord.word.trim().match(/^\p{L}/u)?.[0];
-      const recLetter = (result.recognizedWord || '').trim().match(/^\p{L}/u)?.[0];
-      if (expLetter && recLetter) {
-        const isExpUpper = expLetter === expLetter.toUpperCase() && expLetter !== expLetter.toLowerCase();
-        const isRecUpper = recLetter === recLetter.toUpperCase() && recLetter !== recLetter.toLowerCase();
-        if (isExpUpper !== isRecUpper) {
-          result.capitalizationError = true;
-          result.isCorrect = false;
-          result.score = Math.min(result.score, 70);
-          const notice = isExpUpper
-            ? `Achte auf den Wortanfang: "${currentWord.word}" beginnt mit einem Großbuchstaben ("${expLetter}").`
-            : `Achte auf den Wortanfang: "${currentWord.word}" beginnt mit einem Kleinbuchstaben ("${expLetter}").`;
-          if (!result.feedback.toLowerCase().includes('groß') && !result.feedback.toLowerCase().includes('klein')) {
-            result.feedback = `${result.feedback} ${notice}`.trim();
-          }
-        }
-      }
-
       correctionFinished = true;
       recordCorrection(performance.now() - correctionStarted, 'success');
       setGradeResult(result);
@@ -1237,32 +1218,9 @@ export const WritingView: React.FC<WritingViewProps> = ({
                 <strong style={{ fontSize: '1.35rem', color: '#ffffff', letterSpacing: '0.02em' }}>
                   "{gradeResult.recognizedWord}"
                 </strong>
-                {gradeResult.capitalizationError && (
-                  <span 
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '0.3rem',
-                      background: 'rgba(245, 158, 11, 0.2)',
-                      border: '1px solid rgba(245, 158, 11, 0.4)',
-                      color: '#fbbf24',
-                      padding: '0.2rem 0.6rem',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.8rem',
-                      fontWeight: 700,
-                    }}
-                  >
-                    ⚠️ Falscher Anfangsbuchstabe
-                  </span>
-                )}
               </div>
               <div style={{ fontSize: '0.85rem', color: gradeResult.isCorrect ? 'var(--success)' : 'var(--warning)', fontWeight: 600, marginTop: '0.15rem' }}>
                 {gradeResult.isCorrect ? 'Richtig geschrieben!' : 'Noch einmal üben'}
-                {gradeResult.capitalizationError && (
-                  <span style={{ color: '#fbbf24', marginLeft: '0.5rem' }}>
-                    (Wortanfang beachten: "{currentWord?.word}")
-                  </span>
-                )}
               </div>
             </div>
           </div>
