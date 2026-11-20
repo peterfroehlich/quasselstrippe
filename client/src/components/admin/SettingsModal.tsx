@@ -46,7 +46,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setTestStatus('testing');
     setTestMessage('Verbindung zu Google Gemini wird geprüft...');
 
-    const modelsToTry = ['gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-2.5-flash'];
+    const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.5-flash-lite'];
     let connected = false;
     let lastErrorMsg = '';
 
@@ -60,6 +60,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             signal: AbortSignal.timeout(5000),
             body: JSON.stringify({
               contents: [{ parts: [{ text: 'Antworte nur mit: OK' }] }],
+              generationConfig: { thinkingConfig: { thinkingLevel: 'low' } },
             }),
           }
         );
