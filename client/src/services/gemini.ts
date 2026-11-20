@@ -242,11 +242,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 }`;
 
   const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-  const models = [
-    'gemini-3.5-flash-lite',
-    'gemini-3.5-flash',
-    'gemini-2.5-flash',
-  ];
+  const models = ['gemini-4-hydrogen', 'gemini-3.5-flash-lite'];
   let lastError: Error | null = null;
 
   for (const model of models) {
@@ -275,7 +271,8 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
               },
             ],
             generationConfig: {
-              temperature: 0.2,
+              ...(model.startsWith('gemini-4') ? {} : { temperature: 0.2 }),
+              thinkingConfig: { thinkingLevel: 'low' },
               responseMimeType: 'application/json',
             },
           }),
@@ -290,7 +287,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 
       const data = await response.json();
       const parts = data.candidates?.[0]?.content?.parts || [];
-      const textPart = parts.find((p: any) => typeof p.text === 'string' && p.text.trim())?.text;
+      const textPart = parts.find((p: any) => !p.thought && typeof p.text === 'string' && p.text.trim())?.text;
       if (!textPart) {
         throw new Error('Keine Antwort von Gemini erhalten.');
       }
@@ -377,24 +374,19 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 }`;
 
   const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-  const models = [
-    'gemini-3.5-flash-lite',
-    'gemini-3.5-flash',
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-  ];
+  const models = ['gemini-4-hydrogen', 'gemini-3.5-flash-lite'];
   let lastError: Error | null = null;
 
   for (const model of models) {
     try {
       const genConfig: Record<string, any> = {
-        temperature: 0.1,
-        maxOutputTokens: 350,
+        ...(model.startsWith('gemini-4') ? {} : { temperature: 0.1 }),
+        maxOutputTokens: model.startsWith('gemini-4') ? 65536 : 2048,
         responseMimeType: 'application/json',
       };
 
-      // Suppress reasoning thinking tokens to achieve sub-second grading
-      if (model.startsWith('gemini-3')) {
+      // Low thinking keeps grading responsive; leave room for reasoning and JSON output.
+      if (model.startsWith('gemini-4') || model.startsWith('gemini-3')) {
         genConfig.thinkingConfig = { thinkingLevel: 'low' };
       } else if (model.startsWith('gemini-2.5')) {
         genConfig.thinkingConfig = { thinkingBudget: 0 };
@@ -408,7 +400,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
             headers: {
               'Content-Type': 'application/json',
             },
-            signal: AbortSignal.timeout(7000),
+            signal: AbortSignal.timeout(15000),
             body: JSON.stringify({
               contents: [
                 {
@@ -447,7 +439,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 
       const data = await response.json();
       const parts = data.candidates?.[0]?.content?.parts || [];
-      const textPart = parts.find((p: any) => typeof p.text === 'string' && p.text.trim())?.text;
+      const textPart = parts.find((p: any) => !p.thought && typeof p.text === 'string' && p.text.trim())?.text;
       if (!textPart) {
         throw new Error('Keine Antwort von Gemini erhalten.');
       }
