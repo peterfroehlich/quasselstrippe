@@ -32,17 +32,15 @@ export function validateGrade(value: unknown, expectedWord: string): Handwriting
   const isUpper = (letter: string) => letter === letter.toUpperCase() && letter !== letter.toLowerCase();
   const capitalizationError = grade.capitalizationError === true || Boolean(expLetter && recLetter && isUpper(expLetter) !== isUpper(recLetter));
   const isCorrect = grade.isCorrect && !capitalizationError && normalize(grade.recognizedWord) === normalize(expectedWord);
-  let schoolGrade = typeof grade.schoolGrade === 'string' ? grade.schoolGrade : '';
   let feedback = typeof grade.feedback === 'string' ? grade.feedback : '';
   if (capitalizationError) {
-    if (/^[12]/.test(schoolGrade)) schoolGrade = '3 (Befriedigend)';
     if (expLetter && !/groß|klein/i.test(feedback)) {
       feedback = `${feedback} Achte auf den Wortanfang: "${expectedWord}" beginnt mit einem ${isUpper(expLetter) ? 'Großbuchstaben' : 'Kleinbuchstaben'} ("${expLetter}").`.trim();
     }
   }
   return { recognizedWord: grade.recognizedWord.trim(), isCorrect,
     score: Math.max(0, Math.min(isCorrect ? 100 : 70, grade.score)),
-    schoolGrade, feedback, capitalizationError,
+    feedback, capitalizationError,
     ...(typeof grade.model === 'string' ? { model: grade.model } : {}) };
 }
 

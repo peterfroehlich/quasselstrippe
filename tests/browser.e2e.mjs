@@ -113,6 +113,7 @@ test('handwriting survives resize and undo restores a cleared drawing', async ()
   });
   await page.getByRole('button', { name: /Fertig & Prüfen/ }).click();
   await expect(page.getByRole('button', { name: 'Nächstes Wort' })).toBeVisible(); assert.equal(receivedDrawing, true);
+  await expect(page.getByText(/^Note:/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Nächstes Wort' }).click();
   await expect(canvas).toBeVisible();
   assert.equal(await canvas.evaluate(el => el.width >= el.getBoundingClientRect().width), true);
@@ -146,4 +147,29 @@ test('server AI capability enables worksheet scanning without entering a browser
   await context.clearCookies();
   await page.getByRole('button', { name: 'Lernstatistik öffnen' }).first().click();
   await expect(page.getByLabel('Passwort', { exact: true })).toBeVisible();
+});
+
+test('sparse pen samples form continuous ink through the final lift point', async () => {
+  await page.getByRole('button', { name: 'Schreiben', exact: true }).click();
+  const canvas = page.locator('#root canvas'); await expect(canvas).toBeVisible();
+  const gaps = await canvas.evaluate(el => {
+    const box = el.getBoundingClientRect();
+    const fire = (type, x, buttons) => el.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, pointerId: 71, pointerType: 'pen', isPrimary: true,
+      clientX: box.left + x, clientY: box.top + 80, buttons, pressure: buttons ? 0.5 : 0,
+    }));
+    fire('pointerdown', 80, 1);
+    fire('pointermove', 120, 1);
+    fire('pointermove', 160, 1);
+    fire('pointermove', 200, 1);
+    fire('pointerup', 240, 0);
+    const ctx = el.getContext('2d');
+    const scale = el.width / box.width;
+    const missing = [];
+    for (let x = 80; x <= 240; x++) {
+      if (!ctx.getImageData(Math.floor(x * scale), Math.floor(80 * scale), 1, 1).data[3]) missing.push(x);
+    }
+    return missing;
+  });
+  assert.deepEqual(gaps, [], 'No blank pixels between pen samples or before the lift point');
 });
