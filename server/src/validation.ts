@@ -28,19 +28,13 @@ export function validateGrade(value: unknown, expectedWord: string): Handwriting
   if (typeof grade.recognizedWord !== 'string' || !grade.recognizedWord.trim() ||
       typeof grade.isCorrect !== 'boolean' || typeof grade.score !== 'number' || !Number.isFinite(grade.score)) throw new Error('Invalid handwriting response');
   const normalize = (text: string) => text.normalize('NFKC').trim().toLowerCase().replace(/[.,!?;:'"’‘`´]/g, '').replace(/\s+/g, ' ');
-  const expLetter = expectedWord.trim().match(/^\p{L}/u)?.[0];
-  const recLetter = grade.recognizedWord.trim().match(/^\p{L}/u)?.[0];
-  const isUpper = (letter: string) => letter === letter.toUpperCase() && letter !== letter.toLowerCase();
-  const capitalizationError = grade.capitalizationError === true || Boolean(expLetter && recLetter && isUpper(expLetter) !== isUpper(recLetter));
-  const isCorrect = grade.isCorrect && !capitalizationError && normalize(grade.recognizedWord) === normalize(expectedWord);
-  let feedback = typeof grade.feedback === 'string' ? grade.feedback : '';
-  if (capitalizationError) {
-    if (expLetter && !/groß|klein/i.test(feedback)) {
-      feedback = `${feedback} Achte auf den Wortanfang: "${expectedWord}" beginnt mit einem ${isUpper(expLetter) ? 'Großbuchstaben' : 'Kleinbuchstaben'} ("${expLetter}").`.trim();
-    }
-  }
+  const isCorrect = normalize(grade.recognizedWord) === normalize(expectedWord);
+  const capitalizationError = false;
+  const feedback = isCorrect ? 'Richtig geschrieben!' :
+    (typeof grade.feedback === 'string' && !/groß|klein|capital|upper.?case|lower.?case/i.test(grade.feedback)
+      ? grade.feedback : 'Prüfe die Buchstaben und versuche es noch einmal.');
   return { recognizedWord: grade.recognizedWord.trim(), isCorrect,
-    score: Math.max(0, Math.min(isCorrect ? 100 : 70, grade.score)),
+    score: isCorrect ? 100 : Math.max(0, Math.min(70, grade.score)),
     feedback, capitalizationError,
     ...(typeof grade.model === 'string' ? { model: grade.model } : {}) };
 }

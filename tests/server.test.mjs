@@ -140,11 +140,11 @@ test('AI grade validation rejects string booleans and contradictory correct answ
   assert.equal(result.isCorrect, false); assert.equal(result.score, 70);
   const capitalization = validateGrade({ recognizedWord: 'Word', isCorrect: true, score: 100,
     schoolGrade: '1 (Sehr gut)', feedback: 'Gut!', model: 'test-model' }, 'word');
-  assert.equal(capitalization.isCorrect, false);
-  assert.equal(capitalization.capitalizationError, true);
-  assert.equal(capitalization.score, 70);
+  assert.equal(capitalization.isCorrect, true);
+  assert.equal(capitalization.capitalizationError, false);
+  assert.equal(capitalization.score, 100);
   assert.equal('schoolGrade' in capitalization, false);
-  assert.match(capitalization.feedback, /Kleinbuchstaben/);
+  assert.equal(capitalization.feedback, 'Richtig geschrieben!');
   assert.equal(capitalization.model, 'test-model');
   const valid = validateGrade({ recognizedWord: 'word', isCorrect: true, score: 100, model: 'test-model' }, 'word');
   assert.equal(valid.isCorrect, true);

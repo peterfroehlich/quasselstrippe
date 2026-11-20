@@ -178,15 +178,13 @@ Aufgaben:
 1. Erkenne das geschriebene Wort auf dem Bild (OCR) exakt so, wie es dasteht (inklusive Groß-/Kleinschreibung des ersten Buchstabens).
 2. Vergleiche mit dem Zielwort "${expectedWord}":
 - Prüfe die Rechtschreibung aller Buchstaben.
-- WICHTIG: Achte zwingend auf die Groß-/Kleinschreibung des Anfangsbuchstabens!
-  - Stimmt die Groß-/Kleinschreibung des ersten Buchstabens nicht mit "${expectedWord}" überein (z.B. klein statt groß oder groß statt klein geschrieben), werte dies als Fehler ("isCorrect": false, "score": maximal 70, "capitalizationError": true).
-  - Weise im Feedback explizit auf den falschen Anfangsbuchstaben hin (z.B. 'Achte auf die Großschreibung am Wortanfang' bzw. 'Dieses Wort wird am Anfang kleingeschrieben').
+- Groß- und Kleinschreibung bei ALLEN Buchstaben vollständig ignorieren. Identische Buchstaben unabhängig von ihrer Schreibweise sind richtig (isCorrect: true, score: 100). Keine Abzüge oder Hinweise zur Groß-/Kleinschreibung.
 3. Bewerte:
 - "recognizedWord": Was hat der Schüler geschrieben? (exakte Groß-/Kleinschreibung beibehalten)
-- "isCorrect": true wenn richtig geschrieben UND Anfangsbuchstabe korrekt groß/kleingeschrieben, sonst false.
-- "score": 0 bis 100 (100 = perfekt, 85-95 = sehr gut, 65-75 = richtige Buchstaben aber falsche Groß-/Kleinschreibung am Anfang, 0-40 = falsch oder unleserlich).
+- "isCorrect": true wenn alle Buchstaben unabhängig von Groß-/Kleinschreibung richtig sind, sonst false.
+- "score": 0 bis 100 (100 = perfekt, 85-95 = sehr gut, 0-40 = falsch oder unleserlich).
 - "feedback": Ein kurzer, motivierender Satz auf Deutsch (maximal 12 Wörter). Nenne bei Fehlern die nötige Korrektur. Keine Schulnoten.
-- "capitalizationError": true, falls der Anfangsbuchstabe die falsche Groß-/Kleinschreibung hat, sonst false.
+- "capitalizationError": immer false; Groß-/Kleinschreibung wird nicht bewertet.
 
 Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke außerhalb des JSON:
 {
