@@ -58,3 +58,32 @@ for (const flag of [undefined, false, 'true', true]) {
     } finally { await context.close(); }
   });
 }
+
+test('native canvas guard cancels touchmove only, reports counts, and cleans up', async () => {
+  const page = await browser.newPage();
+  try {
+    await page.route('**/guard-test', route => route.fulfill({ contentType: 'text/html', body: '<canvas></canvas><div id="outside"></div>' }));
+    await page.goto(base + '/guard-test');
+    const result = await page.evaluate(async () => {
+      const { guardHandwritingInput } = await import('/src/services/handwritingInput.ts');
+      const canvas = document.querySelector('canvas'), summaries = [];
+      const stop = guardHandwritingInput(canvas, counts => summaries.push(counts));
+      const touch = (target, type) => {
+        const event = new TouchEvent(type, { bubbles: true, cancelable: true });
+        target.dispatchEvent(event); return event.defaultPrevented;
+      };
+      const start = touch(canvas, 'touchstart');
+      const move = touch(canvas, 'touchmove');
+      const end = touch(canvas, 'touchend');
+      const outside = touch(document.querySelector('#outside'), 'touchmove');
+      for (const type of ['pointerdown', 'pointerup', 'pointerdown', 'pointerup']) {
+        canvas.dispatchEvent(new PointerEvent(type, { pointerType: 'pen', bubbles: true }));
+      }
+      stop();
+      const afterStop = touch(canvas, 'touchmove');
+      return { start, move, end, outside, afterStop, summaries };
+    });
+    assert.deepEqual(result, { start: false, move: true, end: false, outside: false, afterStop: false,
+      summaries: [{ penDown: 2, penUp: 2, penCancel: 0, penCaptureLost: 0, touchStart: 1, touchEnd: 1, touchMovePrevented: 1, rapidPenDown: 1 }] });
+  } finally { await page.close(); }
+});

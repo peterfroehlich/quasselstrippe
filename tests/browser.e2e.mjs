@@ -238,3 +238,22 @@ test('pen contact resumes after a lift or cancellation without a new pointerdown
   });
   assert.deepEqual(undo,{previous:true,last:false});
 });
+
+test('quick i dot and t crossbar remain separate visible strokes with native touch guard', async () => {
+  await page.getByRole('button', { name: 'Schreiben', exact: true }).click();
+  const result = await page.locator('#root canvas').evaluate(el => {
+    const box = el.getBoundingClientRect();
+    const fire = (type,x,y) => el.dispatchEvent(new PointerEvent(type, { bubbles:true, cancelable:true,
+      pointerId:71, pointerType:'pen', isPrimary:true, clientX:box.left+x,clientY:box.top+y,
+      buttons:type==='pointerup'?0:1, pressure:type==='pointerup'?0:0.5 }));
+    fire('pointerdown',80,100); fire('pointermove',80,140); fire('pointerup',80,140);
+    const move = new TouchEvent('touchmove',{bubbles:true,cancelable:true});el.dispatchEvent(move);
+    fire('pointerdown',80,80); fire('pointerup',80,80); // dot without a move
+    fire('pointerdown',150,80); fire('pointermove',150,140); fire('pointerup',150,140);
+    fire('pointerdown',130,100); fire('pointermove',170,100); fire('pointerup',170,100);
+    const scale=el.width/box.width,ctx=el.getContext('2d');
+    const ink=(x,y)=>ctx.getImageData(Math.floor(x*scale),Math.floor(y*scale),1,1).data[3]>0;
+    return {dot:ink(80,80),stem:ink(80,120),gap:ink(80,90),crossbar:ink(165,100),guard:move.defaultPrevented};
+  });
+  assert.deepEqual(result,{dot:true,stem:true,gap:false,crossbar:true,guard:true});
+});

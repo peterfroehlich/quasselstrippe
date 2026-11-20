@@ -261,7 +261,8 @@ Restart the frontend container after changing these settings.
 
 Enabled monitoring collects page/network timing, Web Vitals, anonymous session
 identifiers, fixed error categories, correction duration/outcome, and rate-limited
-pen-recovery events. URLs are reduced to the app origin and `/`; request/response
+pen-recovery events. Five-second input summaries count pen/touch lifecycle events
+and rapid recontacts without coordinates, pressure values, or stroke paths. URLs are reduced to the app origin and `/`; request/response
 bodies, headers, pupil names, vocabulary answers, handwriting images, console
 messages, and session replay are not captured. Direct Gemini traffic is excluded.
 
