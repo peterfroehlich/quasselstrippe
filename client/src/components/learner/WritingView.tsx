@@ -73,6 +73,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
 
   // Palm rejection & pointer isolation state
   const activePointerIdRef = useRef<number | null>(null);
+  const strokeStartedAtRef = useRef(0);
   const activePointerTypeRef = useRef<string | null>(null);
   const hasDetectedPenRef = useRef<boolean>(false);
   const lastPenTimeRef = useRef<number>(0);
@@ -344,7 +345,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
   // Global pointerup/pointercancel listeners on window to ensure pen lift is never missed
   useEffect(() => {
     const handleGlobalPointerUp = (e: PointerEvent) => {
-      if (activePointerIdRef.current === e.pointerId || e.pointerType === 'pen') {
+      if (activePointerIdRef.current === e.pointerId && e.timeStamp >= strokeStartedAtRef.current) {
         isDrawingRef.current = false;
         activePointerIdRef.current = null;
         activePointerTypeRef.current = null;
@@ -354,7 +355,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
     };
 
     const handleGlobalPointerCancel = (e: PointerEvent) => {
-      if (activePointerIdRef.current === e.pointerId || e.pointerType === 'pen') {
+      if (activePointerIdRef.current === e.pointerId && e.timeStamp >= strokeStartedAtRef.current) {
         if (activePointerTypeRef.current === 'touch') {
           revertLastStroke();
         }
@@ -423,6 +424,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
       return;
     }
 
+    strokeStartedAtRef.current = e.timeStamp;
     activePointerIdRef.current = e.pointerId;
     activePointerTypeRef.current = e.pointerType;
 
@@ -459,21 +461,15 @@ export const WritingView: React.FC<WritingViewProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    // If pen is in hover mode or lifted (buttons === 0), release drawing state
-    if (e.pointerType === 'pen' && e.buttons === 0) {
-      if (isDrawingRef.current || activePointerIdRef.current !== null) {
-        isDrawingRef.current = false;
-        activePointerIdRef.current = null;
-        activePointerTypeRef.current = null;
-        lastPointRef.current = null;
-      }
+    // Ignore stale events and other pointers before touching the active stroke.
+    if (!isDrawingRef.current || activePointerIdRef.current !== e.pointerId ||
+        e.timeStamp < strokeStartedAtRef.current || !lastPointRef.current) {
       return;
     }
 
-    // Only accept movements for the currently drawing pointer
-    if (!isDrawingRef.current || activePointerIdRef.current !== e.pointerId || !lastPointRef.current) {
-      return;
-    }
+    // A transient hover sample must not disable the next contact sample.
+    // Pointerup/pointercancel, not button state on a move, ends the stroke.
+    if (e.pointerType === 'pen' && e.buttons === 0 && e.pressure === 0) return;
 
     if (e.pointerType === 'pen') {
       lastPenTimeRef.current = Date.now();
@@ -510,7 +506,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (activePointerIdRef.current === e.pointerId) {
+    if (activePointerIdRef.current === e.pointerId && e.timeStamp >= strokeStartedAtRef.current) {
       // Finish the stroke at the lift position, which may follow the last move event.
       const ctx = canvasRef.current?.getContext('2d');
       if (ctx && isDrawingRef.current && lastPointRef.current) {
@@ -532,7 +528,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
   };
 
   const handlePointerCancel = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (activePointerIdRef.current === e.pointerId || e.pointerType === 'pen') {
+    if (activePointerIdRef.current === e.pointerId && e.timeStamp >= strokeStartedAtRef.current) {
       // Only revert stray touch marks (from resting hand), never actual pen writing!
       if (activePointerTypeRef.current === 'touch') {
         revertLastStroke();
@@ -550,7 +546,10 @@ export const WritingView: React.FC<WritingViewProps> = ({
   };
 
   const handleLostPointerCapture = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (activePointerIdRef.current === e.pointerId || e.pointerType === 'pen') {
+    // Capture loss can arrive after a rapid lift/re-contact with the same pen ID.
+    // Keep pen input alive; its up/cancel events (also listened for on window) end it.
+    if (activePointerTypeRef.current === 'pen') return;
+    if (activePointerIdRef.current === e.pointerId && e.timeStamp >= strokeStartedAtRef.current) {
       isDrawingRef.current = false;
       activePointerIdRef.current = null;
       activePointerTypeRef.current = null;
