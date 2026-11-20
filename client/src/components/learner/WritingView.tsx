@@ -265,7 +265,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
     return activeToolRef.current === 'eraser' || isHardwareEraser;
   };
 
-  const getCanvasCoords = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const getCanvasCoords = (e: Pick<PointerEvent, 'clientX' | 'clientY'>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
@@ -496,22 +496,30 @@ export const WritingView: React.FC<WritingViewProps> = ({
       ctx.lineWidth = Math.max(2, 2.5 + pressure * 3.5);
     }
 
-    const currentCoords = getCanvasCoords(e);
-    const midPoint = {
-      x: (lastPointRef.current.x + currentCoords.x) / 2,
-      y: (lastPointRef.current.y + currentCoords.y) / 2,
-    };
-
-    ctx.beginPath();
-    ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
-    ctx.quadraticCurveTo(lastPointRef.current.x, lastPointRef.current.y, midPoint.x, midPoint.y);
-    ctx.stroke();
-
-    lastPointRef.current = currentCoords;
+    // Browser-coalesced samples preserve detail during quick pen movements.
+    const samples = e.nativeEvent.getCoalescedEvents?.() ?? [];
+    const points = samples.length ? samples : [e.nativeEvent];
+    for (const sample of points) {
+      const coords = getCanvasCoords(sample);
+      ctx.beginPath();
+      ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+      ctx.lineTo(coords.x, coords.y);
+      ctx.stroke();
+      lastPointRef.current = coords;
+    }
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (activePointerIdRef.current === e.pointerId || e.pointerType === 'pen') {
+    if (activePointerIdRef.current === e.pointerId) {
+      // Finish the stroke at the lift position, which may follow the last move event.
+      const ctx = canvasRef.current?.getContext('2d');
+      if (ctx && isDrawingRef.current && lastPointRef.current) {
+        const coords = getCanvasCoords(e);
+        ctx.beginPath();
+        ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+        ctx.lineTo(coords.x, coords.y);
+        ctx.stroke();
+      }
       isDrawingRef.current = false;
       activePointerIdRef.current = null;
       activePointerTypeRef.current = null;
@@ -661,9 +669,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
           result.capitalizationError = true;
           result.isCorrect = false;
           result.score = Math.min(result.score, 70);
-          if (result.schoolGrade.startsWith('1') || result.schoolGrade.startsWith('2')) {
-            result.schoolGrade = '3 (Befriedigend)';
-          }
           const notice = isExpUpper
             ? `Achte auf den Wortanfang: "${currentWord.word}" beginnt mit einem Großbuchstaben ("${expLetter}").`
             : `Achte auf den Wortanfang: "${currentWord.word}" beginnt mit einem Kleinbuchstaben ("${expLetter}").`;
@@ -698,7 +703,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
       recognizedWord: isCorrect ? currentWord.word : '(manuell gewertet)',
       isCorrect,
       score: isCorrect ? 100 : 50,
-      schoolGrade: isCorrect ? '1 (Sehr gut)' : '4 (Ausreichend)',
       feedback: isCorrect 
         ? 'Manuell als richtig bestätigt!' 
         : `Das Wort heißt: "${currentWord.word}". Präge es dir gut ein!`,
@@ -1239,18 +1243,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
             </div>
           </div>
 
-          <div 
-            style={{ 
-              padding: '0.4rem 0.9rem', 
-              borderRadius: 'var(--radius-full)', 
-              background: gradeResult.isCorrect ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-              color: gradeResult.isCorrect ? 'var(--success)' : 'var(--warning)',
-              fontWeight: 700,
-              fontSize: '0.9rem',
-            }}
-          >
-            Note: {gradeResult.schoolGrade}
-          </div>
         </div>
       )}
 

@@ -35,6 +35,7 @@ test('handwriting uses Hydrogen, ignores thought text, and falls back on API fai
       assert.equal(response.status, 200);
       const result = await response.json();
       assert.equal(result.recognizedWord, 'cat');
+      assert.equal('schoolGrade' in result, false);
       assert.equal(result.model, fallback ? 'gemini-3.5-flash-lite' : 'gemini-4-hydrogen');
       assert.deepEqual(calls.map(c => c.model), fallback ? ['gemini-4-hydrogen', 'gemini-3.5-flash-lite'] : ['gemini-4-hydrogen']);
       assert.equal(calls[0].config.thinkingConfig.thinkingLevel, 'low');

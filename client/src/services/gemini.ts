@@ -368,8 +368,7 @@ Aufgaben:
 - "recognizedWord": Was hat der Schüler geschrieben? (exakte Groß-/Kleinschreibung beibehalten)
 - "isCorrect": true wenn richtig geschrieben UND Anfangsbuchstabe korrekt groß/kleingeschrieben, sonst false.
 - "score": 0 bis 100 (100 = perfekt, 85-95 = sehr gut, 65-75 = richtige Buchstaben aber falsche Groß-/Kleinschreibung am Anfang, 0-40 = falsch oder unleserlich).
-- "schoolGrade": Deutsche Schulnote (z.B. "1 (Sehr gut)", "2 (Gut)", "3 (Befriedigend)", "4 (Ausreichend)", "5 (Mangelhaft)", "6 (Ungenügend)").
-- "feedback": Maximal 1 bis 2 kurze, motivierende Sätze auf Deutsch. Erkläre bei Fehlern genau, was falsch ist.
+- "feedback": Ein kurzer, motivierender Satz auf Deutsch (maximal 12 Wörter). Nenne bei Fehlern die nötige Korrektur. Keine Schulnoten.
 - "capitalizationError": true, falls der Anfangsbuchstabe die falsche Groß-/Kleinschreibung hat, sonst false.
 
 Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke außerhalb des JSON:
@@ -377,7 +376,6 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
   "recognizedWord": "das erkannte Wort",
   "isCorrect": true,
   "score": 100,
-  "schoolGrade": "1 (Sehr gut)",
   "feedback": "Klasse gemacht! Fehlerfrei geschrieben.",
   "capitalizationError": false
 }`;
@@ -409,7 +407,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
             headers: {
               'Content-Type': 'application/json',
             },
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(model === 'gemini-4-hydrogen' ? 6000 : 4000),
             body: JSON.stringify({
               contents: [
                 {
@@ -431,13 +429,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
         );
       };
 
-      let response = await sendRequest(genConfig);
-
-      // Gracefully retry without thinkingConfig if the model endpoint rejects thinking parameters
-      if (!response.ok && response.status === 400 && genConfig.thinkingConfig) {
-        const { thinkingConfig, ...plainConfig } = genConfig;
-        response = await sendRequest(plainConfig);
-      }
+      const response = await sendRequest(genConfig);
 
       if (!response.ok) {
         const errorJson = await response.json().catch(() => null);
@@ -482,15 +474,12 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
       const capitalizationError = Boolean(parsed.capitalizationError || hasCapitalizationMismatch);
       let isCorrect = Boolean(parsed.isCorrect);
       let score = typeof parsed.score === 'number' ? parsed.score : isCorrect ? 100 : 40;
-      let schoolGrade = parsed.schoolGrade || (isCorrect ? '1 (Sehr gut)' : '5 (Mangelhaft)');
       let feedback = parsed.feedback || (isCorrect ? 'Super gemacht!' : 'Übe dieses Wort noch einmal.');
 
       if (capitalizationError) {
         isCorrect = false;
         score = Math.min(score, 70);
-        if (schoolGrade.startsWith('1') || schoolGrade.startsWith('2')) {
-          schoolGrade = '3 (Befriedigend)';
-        }
+
         if (capNotice && !feedback.toLowerCase().includes('groß') && !feedback.toLowerCase().includes('klein')) {
           feedback = `${feedback} ${capNotice}`.trim();
         }
@@ -500,7 +489,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
         recognizedWord: parsed.recognizedWord || '(unbekannt)',
         isCorrect,
         score,
-        schoolGrade,
+
         feedback,
         capitalizationError,
         model,
