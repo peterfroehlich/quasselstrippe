@@ -1,3 +1,4 @@
+import type { HandwritingInputCounts } from './services/handwritingInput';
 import { APP_VERSION } from './version';
 
 declare global {
@@ -46,4 +47,17 @@ export function recordPenRecovery() {
   if (now - lastRecovery < 1000) return;
   lastRecovery = now;
   emit('handwriting.pen_recovery');
+}
+
+export function recordHandwritingInput(counts: HandwritingInputCounts) {
+  emit('handwriting.input', {
+    'input.pen_down': counts.penDown,
+    'input.pen_up': counts.penUp,
+    'input.pen_cancel': counts.penCancel,
+    'input.pen_capture_lost': counts.penCaptureLost,
+    'input.touch_start': counts.touchStart,
+    'input.touch_end': counts.touchEnd,
+    'input.touch_move_prevented': counts.touchMovePrevented,
+    'input.rapid_pen_down': counts.rapidPenDown,
+  });
 }

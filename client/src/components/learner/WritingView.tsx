@@ -20,7 +20,8 @@ import {
 import confetti from 'canvas-confetti';
 import type { WordItem, Language, HandwritingGradeResponse } from '../../types/vocabulary';
 import { speechService } from '../../services/speech';
-import { recordCorrection, recordPenRecovery } from '../../telemetry';
+import { guardHandwritingInput } from '../../services/handwritingInput';
+import { recordCorrection, recordPenRecovery, recordHandwritingInput } from '../../telemetry';
 import { gradeHandwriting } from '../../services/gemini';
 import { AudioButton } from '../common/AudioButton';
 
@@ -213,6 +214,12 @@ export const WritingView: React.FC<WritingViewProps> = ({
       if (ro) ro.disconnect();
     };
   }, [initCanvas, isSubmitted]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || isSubmitted || isFinished) return;
+    return guardHandwritingInput(canvas, recordHandwritingInput);
+  }, [isSubmitted, isFinished]);
 
   // Check if pointer is likely a resting palm/hand rather than deliberate drawing
   const isLikelyPalmTouch = (e: React.PointerEvent<HTMLCanvasElement>): boolean => {
