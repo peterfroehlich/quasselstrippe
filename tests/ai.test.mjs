@@ -48,7 +48,7 @@ test('handwriting uses Flash-Lite, ignores thought text, and falls back on API f
         assert.equal(calls[1].config.maxOutputTokens, 65536);
       }
     }
-    for (const [written, expected, correct] of [['CAT', 'cat', true], ['cAt', 'Cat', true], ['cat', 'CAT', true], ['DOG', 'cat', false]]) {
+    for (const [written, expected, correct] of [['CAT', 'cat', true], ['cAt', 'Cat', true], ['cat', 'CAT', true], ['DOG', 'cat', false], ['4', 'four', false], ['14', 'fourteen', false], ['FOUR', 'four', true]]) {
       recognizedWord = written; providerCorrect = false; failDefault = false;
       const response = await originalFetch(`http://127.0.0.1:${server.address().port}/grade-handwriting`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },

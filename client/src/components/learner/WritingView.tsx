@@ -14,8 +14,6 @@ import {
   ChevronRight,
   BookOpen,
   Loader2,
-  ShieldCheck,
-  ShieldAlert
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { WordItem, Language, HandwritingGradeResponse } from '../../types/vocabulary';
@@ -917,7 +915,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
         }}
       >
         {/* Canvas Toolbar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', paddingRight: '60px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <button
               type="button"
@@ -943,29 +941,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
               <span>Radierer</span>
             </button>
 
-            {/* Palm Rejection / Stylus Protection Toggle */}
-            <button
-              type="button"
-              onClick={() => setIsStylusPreferred(prev => !prev)}
-              disabled={isSubmitted}
-              className={`btn btn-sm ${isStylusPreferred ? 'btn-primary' : 'btn-secondary'}`}
-              style={{ 
-                padding: '0.45rem 0.85rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                fontSize: '0.82rem',
-                opacity: isSubmitted ? 0.6 : 1,
-                ...(isStylusPreferred ? { background: 'rgba(16, 185, 129, 0.2)', color: '#34d399', borderColor: 'rgba(16, 185, 129, 0.4)' } : {})
-              }}
-              title={isStylusPreferred 
-                ? "Handballenschutz aktiv: Nur der Apple Pencil zeichnet. Die Hand kann auf dem Bildschirm abgelegt werden." 
-                : "Handballenschutz aus: Auch Finger zeichnen. Klicken, um Handablage-Schutz zu aktivieren."}
-            >
-              {isStylusPreferred ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
-              <span>{isStylusPreferred ? 'Handballenschutz' : 'Finger erlaubt'}</span>
-            </button>
-
             {isReverseTipDetected && (
               <span 
                 style={{ 
@@ -989,18 +964,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <button
               type="button"
-              onClick={handleUndo}
-              disabled={isSubmitted}
-              className="btn btn-secondary btn-sm"
-              style={{ padding: '0.45rem 0.75rem', opacity: isSubmitted ? 0.6 : 1 }}
-              title="Letzten Strich rückgängig machen"
-            >
-              <Undo2 size={15} />
-              <span>Rückgängig</span>
-            </button>
-
-            <button
-              type="button"
               onClick={handleClear}
               disabled={isSubmitted}
               className="btn btn-secondary btn-sm"
@@ -1011,14 +974,18 @@ export const WritingView: React.FC<WritingViewProps> = ({
               <span>Leeren</span>
             </button>
 
-            {currentWord && (
-              <AudioButton
-                text={currentWord.word}
-                language={language}
-                size="sm"
-                title="Wort anhören 🔊"
-              />
-            )}
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={isSubmitted}
+              className="btn btn-secondary btn-sm"
+              style={{ padding: '0.45rem 0.75rem', opacity: isSubmitted ? 0.6 : 1 }}
+              title="Letzten Strich rückgängig machen"
+            >
+              <Undo2 size={15} />
+              <span>Rückgängig</span>
+            </button>
+
           </div>
         </div>
 
@@ -1030,7 +997,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
           style={{ 
             position: 'relative',
             borderRadius: 'var(--radius-md)',
-            overflow: 'hidden',
+            overflow: 'visible',
             boxShadow: 'inset 0 2px 6px rgba(0, 0, 0, 0.25)',
             border: '2px solid rgba(255, 255, 255, 0.15)',
             // High contrast school notebook lines: White paper with light blue lines & red margin
@@ -1045,6 +1012,18 @@ export const WritingView: React.FC<WritingViewProps> = ({
             cursor: isSubmitted ? 'default' : (activeTool === 'eraser' || isReverseTipDetected ? 'crosshair' : 'default')
           }}
         >
+          {currentWord && (
+            <AudioButton
+              text={currentWord.word}
+              language={language}
+              iconSize={38}
+              title="Wort anhören 🔊"
+              style={{ width: '68px', height: '68px', minWidth: '68px', minHeight: '68px',
+                position: 'absolute', top: '-22px', right: '-12px', zIndex: 2,
+                background: 'var(--bg-surface-elevated)', border: '2px solid var(--primary)',
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)' }}
+            />
+          )}
           <canvas
             ref={canvasRef}
             draggable={false}
@@ -1057,6 +1036,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
               width: '100%',
               height: '100%',
               display: 'block',
+              borderRadius: 'inherit',
               touchAction: 'none',
               pointerEvents: isSubmitted ? 'none' : 'auto',
             }}
@@ -1080,11 +1060,6 @@ export const WritingView: React.FC<WritingViewProps> = ({
               {currentWord && (
                 <span style={{ fontSize: '0.9rem', marginLeft: '0.6rem', color: '#64748b', fontStyle: 'normal' }}>
                   ({currentWord.word.replace(/\s+/g, '').length} Buchstaben)
-                </span>
-              )}
-              {isStylusPreferred && (
-                <span style={{ fontSize: '0.85rem', marginLeft: '0.5rem', opacity: 0.85, color: '#059669', fontStyle: 'normal' }}>
-                  (Handballenschutz aktiv 🛡️)
                 </span>
               )}
             </div>
@@ -1167,16 +1142,15 @@ export const WritingView: React.FC<WritingViewProps> = ({
         )}
       </div>
 
-      {/* 1. RECOGNIZED TEXT & GRADE STATUS DIRECTLY BELOW WRITTEN PANEL */}
+      {/* Combined correction result and teacher feedback */}
       {isSubmitted && gradeResult && (
         <div 
           className="glass-panel"
           style={{ 
             padding: '1rem 1.5rem', 
             display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'space-between', 
-            flexWrap: 'wrap', 
+            flexDirection: 'column',
+            alignItems: 'stretch',
             gap: '1rem',
             border: gradeResult.isCorrect ? '1.5px solid rgba(16, 185, 129, 0.4)' : '1.5px solid rgba(245, 158, 11, 0.4)',
             background: gradeResult.isCorrect ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)',
@@ -1232,52 +1206,43 @@ export const WritingView: React.FC<WritingViewProps> = ({
             </div>
           </div>
 
-        </div>
-      )}
+          {/* Top Row: Title (with line break for model) on Left, "Nächstes Wort" on Top Right */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary-light)', fontWeight: 700, fontSize: '0.95rem' }}>
+                <Sparkles size={16} />
+                <span>Gemini Lehrer-Feedback:</span>
+              </div>
+              {gradeResult.model && (
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 500, marginTop: '0.15rem', marginLeft: '1.45rem' }}>
+                  ({gradeResult.model})
+                </div>
+              )}
+            </div>
 
-      {/* 2. TEACHER FEEDBACK PANEL (image 1) WITH "NÄCHSTES WORT" BUTTON */}
-      {isSubmitted && gradeResult && (
-        <div 
-          className="glass-panel"
-          style={{ 
-            background: 'rgba(99, 102, 241, 0.08)', 
-            borderRadius: 'var(--radius-md)', 
-            padding: '1.35rem', 
-            border: '1px solid rgba(99, 102, 241, 0.25)',
-            display: 'flex', 
-            flexDirection: 'column', 
-            gap: '0.85rem'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--primary-light)', fontWeight: 700, fontSize: '0.95rem' }}>
-            <Sparkles size={16} />
-            <span>Gemini Lehrer-Feedback{gradeResult.model ? ` (${gradeResult.model})` : ''}:</span>
-          </div>
-
-          <p style={{ color: 'var(--text-primary)', fontSize: '0.95rem', margin: 0, lineHeight: 1.55 }}>
-            {gradeResult.feedback}
-          </p>
-
-          {/* NEXT WORD BUTTON (lives inside this panel) */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '0.35rem' }}>
             <button
               type="button"
               onClick={handleNextWord}
               className="btn btn-primary"
               style={{
-                minWidth: '200px',
-                padding: '0.85rem 1.75rem',
-                fontSize: '1.05rem',
-                display: 'flex',
+                minWidth: '180px',
+                padding: '0.65rem 1.35rem',
+                fontSize: '0.98rem',
+                display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '0.6rem',
+                gap: '0.55rem',
+                flexShrink: 0,
               }}
             >
               <span>Nächstes Wort</span>
-              <ArrowRight size={18} />
+              <ArrowRight size={17} />
             </button>
           </div>
+
+          <p style={{ color: 'var(--text-primary)', fontSize: '0.95rem', margin: 0, lineHeight: 1.55 }}>
+            {gradeResult.feedback}
+          </p>
         </div>
       )}
 

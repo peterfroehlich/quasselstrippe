@@ -361,6 +361,7 @@ Aufgaben:
 1. Erkenne das geschriebene Wort auf dem Bild (OCR) exakt so, wie es dasteht (inklusive Groß-/Kleinschreibung des ersten Buchstabens).
 2. Vergleiche mit dem Zielwort "${expectedWord}":
 - Prüfe die Rechtschreibung aller Buchstaben.
+- Ziffern NICHT in Zahlwörter umwandeln: Steht auf dem Bild "4", muss recognizedWord "4" bleiben, nicht "four". Ein Zahlwort muss ausgeschrieben werden; "4" für "four" ist falsch. Keine Übersetzungen oder Bedeutungsäquivalente als richtige Schreibweise akzeptieren.
 - Groß- und Kleinschreibung bei ALLEN Buchstaben vollständig ignorieren. Identische Buchstaben unabhängig von ihrer Schreibweise sind richtig (isCorrect: true, score: 100). Keine Abzüge oder Hinweise zur Groß-/Kleinschreibung.
 3. Bewerte:
 - "recognizedWord": Was hat der Schüler geschrieben? (exakte Groß-/Kleinschreibung beibehalten)
