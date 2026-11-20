@@ -56,7 +56,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 }`;
 
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-    const models = ['gemini-4-hydrogen', 'gemini-3.5-flash-lite'];
+    const models = ['gemini-3.5-flash-lite', 'gemini-4-hydrogen'];
     let lastError: Error | null = null;
     let resultData: WorksheetAnalysisResponse | null = null;
 
@@ -198,7 +198,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 }`;
 
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-    const models = ['gemini-4-hydrogen', 'gemini-3.5-flash-lite'];
+    const models = ['gemini-3.5-flash-lite', 'gemini-4-hydrogen'];
     let lastError: Error | null = null;
     let resultData: HandwritingGradeResponse | null = null;
 

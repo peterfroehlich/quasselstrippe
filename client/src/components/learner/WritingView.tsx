@@ -461,15 +461,33 @@ export const WritingView: React.FC<WritingViewProps> = ({
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    // Ignore stale events and other pointers before touching the active stroke.
-    if (!isDrawingRef.current || activePointerIdRef.current !== e.pointerId ||
-        e.timeStamp < strokeStartedAtRef.current || !lastPointRef.current) {
-      return;
+    if (isSubmitted || isGrading || e.timeStamp < strokeStartedAtRef.current) return;
+
+    if (e.pointerType === 'pen') {
+      const inContact = e.pressure > 0 || (e.buttons & 33) !== 0;
+      if (!inContact) {
+        // A lift may arrive as hover rather than pointerup. Break the path so
+        // the next contact cannot connect two separate letters.
+        if (activePointerIdRef.current === e.pointerId) {
+          isDrawingRef.current = false;
+          activePointerIdRef.current = null;
+          activePointerTypeRef.current = null;
+          lastPointRef.current = null;
+        }
+        return;
+      }
+      if (!isDrawingRef.current || activePointerIdRef.current !== e.pointerId || !lastPointRef.current) {
+        // Recover after a cancelled/missing down event using positive contact
+        // evidence. Touch/palm and mouse movements never use this recovery path.
+        const rect = e.currentTarget.getBoundingClientRect();
+        if (e.clientX < rect.left || e.clientX >= rect.right ||
+            e.clientY < rect.top || e.clientY >= rect.bottom) return;
+        handlePointerDown(e);
+        return;
+      }
     }
 
-    // A transient hover sample must not disable the next contact sample.
-    // Pointerup/pointercancel, not button state on a move, ends the stroke.
-    if (e.pointerType === 'pen' && e.buttons === 0 && e.pressure === 0) return;
+    if (!isDrawingRef.current || activePointerIdRef.current !== e.pointerId || !lastPointRef.current) return;
 
     if (e.pointerType === 'pen') {
       lastPenTimeRef.current = Date.now();
