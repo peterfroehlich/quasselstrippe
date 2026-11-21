@@ -1,3 +1,4 @@
+import { CorrectionMarks, type InkBounds } from './CorrectionMarks';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Volume2, 
@@ -57,6 +58,10 @@ export const WritingView: React.FC<WritingViewProps> = ({
   
   // Grading & result state
   const [isGrading, setIsGrading] = useState(false);
+  const [showMarks, setShowMarks] = useState(() => {
+    try { return localStorage.getItem('writing.correctionMarks') !== 'off'; } catch { return true; }
+  });
+  const inkBounds = useRef<InkBounds | null>(null);
   const [gradeResult, setGradeResult] = useState<HandwritingGradeResponse | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [gradingError, setGradingError] = useState<string | null>(null);
@@ -608,6 +613,9 @@ export const WritingView: React.FC<WritingViewProps> = ({
       hasInk = false;
     }
 
+    inkBounds.current = hasInk ? { left: 100 * minX / origWidth,
+      width: 100 * (maxX - minX + 1) / origWidth, bottom: 100 * maxY / origHeight } : null;
+
     let sourceX = 0;
     let sourceY = 0;
     let sourceW = origWidth;
@@ -1033,6 +1041,10 @@ export const WritingView: React.FC<WritingViewProps> = ({
             }}
           />
 
+          {isSubmitted && gradeResult && showMarks && (
+            <CorrectionMarks correct={gradeResult.isCorrect} written={gradeResult.recognizedWord}
+              target={currentWord.word} bounds={inkBounds.current} />
+          )}
           {!hasDrawn && (
             <div 
               style={{
@@ -1056,6 +1068,15 @@ export const WritingView: React.FC<WritingViewProps> = ({
             </div>
           )}
         </div>
+
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', alignSelf: 'flex-start', cursor: 'pointer' }}>
+          <input className="correction-switch" type="checkbox" role="switch" checked={showMarks} onChange={event => {
+            const enabled = event.target.checked;
+            setShowMarks(enabled);
+            try { localStorage.setItem('writing.correctionMarks', enabled ? 'on' : 'off'); } catch { /* Storage unavailable. */ }
+          }} />
+          Korrekturzeichen
+        </label>
 
         {/* Action / Submit Button (only before submission) */}
         {!isSubmitted && (

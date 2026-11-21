@@ -721,3 +721,24 @@ button, a, input, select, textarea, [role="button"], .speaker-btn, .flip-card-in
 }
 
 
+
+.correction-switch {
+  appearance: none;
+  width: 2.4rem;
+  height: 1.4rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  background: var(--bg-surface-elevated);
+  cursor: pointer;
+}
+.correction-switch::before {
+  content: '';
+  display: block;
+  margin: 2px;
+  width: 1rem;
+  height: 1rem;
+  background: white;
+  border-radius: 50%;
+}
+.correction-switch:checked { background: var(--primary); }
+.correction-switch:checked::before { transform: translateX(1rem); }
