@@ -25,16 +25,29 @@ export function errorRanges(written: string, target: string) {
 
 export type InkBounds = { left: number; width: number; bottom: number };
 
-export function CorrectionMarks({ correct, written, target, bounds }: {
-  correct: boolean; written: string; target: string; bounds: InkBounds | null;
+export function CorrectionMarks({ correct, correctCount, written, target, bounds }: {
+  correctCount: number; correct: boolean; written: string; target: string; bounds: InkBounds | null;
 }) {
-  if (correct) return (
-    <svg aria-hidden="true" viewBox="0 0 64 64" width="58" height="58"
-      style={{ position: 'absolute', bottom: 8, right: 14, pointerEvents: 'none', transform: 'rotate(-9deg)' }}>
-      <path d="M11 48 Q18 30 32 7 Q34 23 49 52 L7 27 Q28 29 57 20 Q34 36 11 48"
-        fill="none" stroke="#15804f" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
+  if (correct) {
+    const reward = ['star', 'smiley', 'praise'][Math.max(0, correctCount - 1) % 3];
+    return (
+      <svg aria-hidden="true" data-reward={reward} viewBox={reward === 'praise' ? '0 0 154 64' : '0 0 64 64'}
+        width={reward === 'praise' ? 142 : 58} height="58" fill="none" stroke="#15804f"
+        strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"
+        style={{ position: 'absolute', bottom: 8, right: 14, pointerEvents: 'none', transform: 'rotate(-6deg)' }}>
+        {reward === 'star' && <path d="M11 48 Q18 30 32 7 Q34 23 49 52 L7 27 Q28 29 57 20 Q34 36 11 48" />}
+        {reward === 'smiley' && <>
+          <path d="M34 6 C49 5 58 17 57 33 S46 57 30 57 S5 46 6 30 S17 5 34 6Z" />
+          <path d="M22 23 l-1 4 M42 22 l-1 4 M17 36 Q31 57 48 35" />
+        </>}
+        {reward === 'praise' && <>
+          <text x="4" y="43" fill="#15804f" stroke="none" fontSize="32" fontStyle="italic"
+            fontFamily="'Bradley Hand', 'Segoe Print', cursive" textLength="143" lengthAdjust="spacingAndGlyphs">Good job!</text>
+          <path d="M14 51 Q71 46 133 49" strokeWidth="2" />
+        </>}
+      </svg>
+    );
+  }
   if (!bounds) return null;
   return <>{errorRanges(written, target).map(([from,to], index) => (
     <svg key={index} aria-hidden="true" viewBox="0 0 100 8" preserveAspectRatio="none"
