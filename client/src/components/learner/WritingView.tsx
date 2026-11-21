@@ -1051,7 +1051,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
           />
 
           {isSubmitted && gradeResult && showMarks && (
-            <CorrectionMarks correct={gradeResult.isCorrect} written={gradeResult.recognizedWord}
+            <CorrectionMarks correctCount={score} correct={gradeResult.isCorrect} written={gradeResult.recognizedWord}
               target={currentWord.word} bounds={inkBounds.current} />
           )}
           {!hasDrawn && (
