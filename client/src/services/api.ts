@@ -286,7 +286,7 @@ export async function apiAnalyzeWorksheet(params: {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
-    signal: AbortSignal.timeout(90000),
+    signal: AbortSignal.timeout(125000),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));

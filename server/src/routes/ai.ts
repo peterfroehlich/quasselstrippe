@@ -19,6 +19,7 @@ type ResolvedAiConfig =
   | { provider: 'gemini'; apiKey: string };
 
 const GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-4-hydrogen'];
+const noResponseFormatTargets = new Set<string>();
 const NOT_CONFIGURED_ERROR =
   'Kein KI-Endpunkt konfiguriert. Bitte einen OpenAI-kompatiblen Endpunkt (AI_BASE_URL) oder einen Gemini API-Schlüssel (GEMINI_API_KEY) in den Einstellungen oder auf dem Server hinterlegen.';
 
@@ -196,9 +197,12 @@ async function callOpenAiCompatible(params: {
         });
       };
 
-      let response = await sendRequest(true);
-      // Some OpenAI-compatible gateways/models do not support response_format; retry once without it on 400.
-      if (response.status === 400 && expectJson) {
+      const targetKey = `${endpointUrl}|${model}`;
+      const tryResponseFormat = expectJson && !noResponseFormatTargets.has(targetKey);
+      let response = await sendRequest(tryResponseFormat);
+      // Some OpenAI-compatible gateways/models (e.g. Reclopsy ACP) do not support response_format; retry once without it on 400.
+      if (response.status === 400 && tryResponseFormat) {
+        noResponseFormatTargets.add(targetKey);
         response = await sendRequest(false);
       }
 
@@ -375,7 +379,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
         mimeType,
         cleanBase64,
         temperature: 0.2,
-        timeoutMs: 45000,
+        timeoutMs: 115000,
       });
       const parsed = extractJsonObject(text, 'KI-Antwort konnte nicht als Vokabelliste interpretiert werden.');
       return void res.json(validateWorksheet(parsed, language, suggestedLesson));
@@ -511,7 +515,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
         cleanBase64,
         temperature: 0.1,
         maxTokens: 2048,
-        timeoutMs: 30000,
+        timeoutMs: 60000,
       });
       const parsed = extractJsonObject(text, 'KI-Antwort konnte nicht als JSON interpretiert werden.');
       return void res.json({ ...validateGrade(parsed, expectedWord), model });

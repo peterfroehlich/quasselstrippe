@@ -401,8 +401,8 @@ export async function analyzeWorksheetWithGemini(
       return validateWorksheet(serverResult, language, suggestedLesson);
     }
   } catch (serverErr) {
-    if (serverErr instanceof ApiError && !serverErr.retryable) throw serverErr;
-    console.warn('[AI] Server analysis unavailable or failed, falling back to direct client call', serverErr);
+    if (serverErr instanceof ApiError && serverErr.status !== 0) throw serverErr;
+    console.warn('[AI] Server analysis unavailable, falling back to direct client call', serverErr);
   }
 
   // 2. Direct client fallback
@@ -567,8 +567,8 @@ export async function gradeHandwriting(params: {
     });
     return validateGrade(serverResult, expectedWord);
   } catch (serverErr) {
-    if (serverErr instanceof ApiError && !serverErr.retryable) throw serverErr;
-    console.warn('[AI] Server handwriting grading unavailable or failed, falling back to direct client call', serverErr);
+    if (serverErr instanceof ApiError && serverErr.status !== 0) throw serverErr;
+    console.warn('[AI] Server handwriting grading unavailable, falling back to direct client call', serverErr);
   }
 
   // 2. Direct client fallback
