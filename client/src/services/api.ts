@@ -18,10 +18,11 @@ async function request(url: string, options: RequestInit = {}): Promise<Response
   }
   return response;
 }
-export async function apiSession(): Promise<boolean> {
+export async function apiSession(): Promise<{ authenticated: boolean; authEnabled: boolean }> {
   const res = await fetch(`${API_BASE}/auth/session`, { signal: AbortSignal.timeout(5000) });
   if (!res.ok) throw new ApiError('Anmeldung nicht erreichbar.', res.status);
-  return (await res.json()).authenticated === true;
+  const data = await res.json();
+  return { authenticated: data.authenticated === true, authEnabled: data.authEnabled !== false };
 }
 export async function apiLogin(password: string): Promise<void> {
   const res = await fetch(`${API_BASE}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }), signal: AbortSignal.timeout(10000) });

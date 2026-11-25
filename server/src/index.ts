@@ -1,5 +1,4 @@
 import express from 'express';
-import { randomBytes } from 'node:crypto';
 import { createAuth } from './auth.js';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -22,12 +21,7 @@ let isShuttingDown = false;
 getDatabase();
 
 // Middleware
-let appPassword = process.env.APP_PASSWORD;
-if (!appPassword && process.env.NODE_ENV !== 'production') {
-  appPassword = randomBytes(18).toString('base64url');
-  console.log(`[Auth] Development login password: ${appPassword}`);
-}
-const auth = createAuth(appPassword || '');
+const auth = createAuth(process.env.APP_PASSWORD?.trim());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 

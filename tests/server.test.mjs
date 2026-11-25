@@ -180,3 +180,24 @@ test('worksheet metadata and extracted words are validated before reaching the U
   assert.equal(result.lessonName, 'Neue Lektion'); assert.equal(result.words[0].language, 'en');
   assert.throws(() => validateWorksheet({ words: [{ word: 42, translation: 'Test' }] }, 'en'));
 });
+
+test('authentication is disabled when APP_PASSWORD is unset and rejects placeholder CHANGE_ME', async () => {
+  assert.throws(() => createAuth('CHANGE_ME'));
+  const openApp = express();
+  openApp.use(express.json());
+  const openAuth = createAuth('');
+  openApp.use('/api/auth', openAuth.router);
+  openApp.use('/api', openAuth.sameOrigin, openAuth.requireAuth);
+  openApp.use('/api/settings', settingsRouter);
+  const openServer = openApp.listen(0, '127.0.0.1');
+  await new Promise(resolve => openServer.once('listening', resolve));
+  try {
+    const openBase = `http://127.0.0.1:${openServer.address().port}/api`;
+    const session = await (await fetch(`${openBase}/auth/session`)).json();
+    assert.deepEqual(session, { authenticated: true, authEnabled: false });
+    const settingsRes = await fetch(`${openBase}/settings`);
+    assert.equal(settingsRes.status, 200);
+  } finally {
+    await new Promise(resolve => openServer.close(resolve));
+  }
+});

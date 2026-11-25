@@ -30,7 +30,7 @@ import { AdminDashboard } from './components/admin/AdminDashboard';
 import { SettingsModal } from './components/admin/SettingsModal';
 import { APP_VERSION } from './version';
 
-const AuthenticatedApp: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
+const AuthenticatedApp: React.FC<{ onLogout?: () => void }> = ({ onLogout }) => {
   const [words, setWords] = useState<WordItem[]>([]);
   const [profiles, setProfiles] = useState<UserProfile[]>([]);
   const [activeProfile, setActiveProfile] = useState<UserProfile | null>(null);
@@ -214,11 +214,13 @@ const AuthenticatedApp: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         onOpenStats={() => setIsStatsOpen(true)}
       />
 
-      <div style={{ maxWidth: '980px', margin: '0 auto', padding: '0.5rem 1rem' }}>
-        <button className="btn btn-ghost btn-sm" onClick={onLogout}>Abmelden</button>
-        {pending > 0 && <p role="status">{pending} Änderungen auf diesem Gerät gespeichert. Synchronisierung bei Verbindung.</p>}
-        {error && <p role="alert" style={{ color: 'var(--danger)' }}>{error}</p>}
-      </div>
+      {(onLogout || pending > 0 || error) && (
+        <div style={{ maxWidth: '980px', margin: '0 auto', padding: '0.5rem 1rem' }}>
+          {onLogout && <button className="btn btn-ghost btn-sm" onClick={onLogout}>Abmelden</button>}
+          {pending > 0 && <p role="status">{pending} Änderungen auf diesem Gerät gespeichert. Synchronisierung bei Verbindung.</p>}
+          {error && <p role="alert" style={{ color: 'var(--danger)' }}>{error}</p>}
+        </div>
+      )}
       <main style={{ flex: 1 }}>
         {mode === 'learner' ? (
           <LearnerDashboard
@@ -308,34 +310,47 @@ const AuthenticatedApp: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
 
 export const App: React.FC = () => {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [authEnabled, setAuthEnabled] = useState(true);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    const session = localStorage.getItem('quasselstrippe_signed_out') === 'true'
-      ? apiLogout().catch(() => {}).then(() => false)
-      : apiSession();
-    session.then(value => {
+    const signedOut = localStorage.getItem('quasselstrippe_signed_out') === 'true';
+    apiSession().then(async (session) => {
       if (cancelled) return;
-      const allowed = value && localStorage.getItem('quasselstrippe_signed_out') !== 'true';
-      setAuthenticated(allowed);
-      if (allowed) localStorage.setItem('quasselstrippe_authenticated', 'true');
+      if (!session.authEnabled) {
+        setAuthEnabled(false);
+        localStorage.removeItem('quasselstrippe_signed_out');
+        localStorage.setItem('quasselstrippe_authenticated', 'true');
+        setAuthenticated(true);
+        return;
+      }
+      setAuthEnabled(true);
+      if (signedOut) {
+        await apiLogout().catch(() => {});
+        if (cancelled) return;
+        localStorage.removeItem('quasselstrippe_authenticated');
+        setAuthenticated(false);
+        return;
+      }
+      setAuthenticated(session.authenticated);
+      if (session.authenticated) localStorage.setItem('quasselstrippe_authenticated', 'true');
       else localStorage.removeItem('quasselstrippe_authenticated');
     }).catch(() => {
-      if (!cancelled) { setAuthenticated(localStorage.getItem('quasselstrippe_authenticated') === 'true' && localStorage.getItem('quasselstrippe_signed_out') !== 'true'); setError('Server nicht erreichbar. Bereits gespeicherte Daten sind offline verfügbar.'); }
+      if (!cancelled) { setAuthenticated(localStorage.getItem('quasselstrippe_authenticated') === 'true' && !signedOut); setError('Server nicht erreichbar. Bereits gespeicherte Daten sind offline verfügbar.'); }
     });
     const onExpired = () => { localStorage.removeItem('quasselstrippe_authenticated'); setAuthenticated(false); setError('Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.'); };
     window.addEventListener('quasselstrippe:unauthorized', onExpired);
     return () => { cancelled = true; window.removeEventListener('quasselstrippe:unauthorized', onExpired); };
   }, []);
   if (authenticated === null) return <p role="status">Lade Quasselstrippe...</p>;
-  if (authenticated) return <AuthenticatedApp onLogout={() => {
+  if (authenticated) return <AuthenticatedApp onLogout={authEnabled ? () => {
     localStorage.removeItem('quasselstrippe_authenticated');
     localStorage.setItem('quasselstrippe_signed_out', 'true');
     setAuthenticated(false);
     apiLogout().catch(err => setError(err.message));
-  }} />;
+  } : undefined} />;
   return <main style={{ maxWidth: '440px', margin: '15vh auto', padding: '1rem' }}>
     <h1>Quasselstrippe</h1>
     <p>Melde dich mit dem Passwort deiner Lernapp an.</p>

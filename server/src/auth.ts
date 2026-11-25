@@ -1,8 +1,29 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { Router, type Request, type Response, type RequestHandler } from 'express';
 
-export function createAuth(password: string) {
-  if (!password || password === 'CHANGE_ME') throw new Error('Configure APP_PASSWORD before starting the server');
+export function createAuth(password?: string) {
+  const sameOrigin: RequestHandler = (req, res, next) => {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.headers.origin) {
+      try { if (new URL(req.headers.origin).host !== req.headers.host) return void res.status(403).json({ error: 'Invalid request origin' }); }
+      catch { return void res.status(403).json({ error: 'Invalid request origin' }); }
+    }
+    next();
+  };
+
+  if (!password) {
+    const router = Router();
+    router.use(sameOrigin);
+    router.get('/session', (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ authenticated: true, authEnabled: false }); });
+    router.post('/login', (_req, res) => { res.json({ authenticated: true, authEnabled: false }); });
+    router.post('/logout', (_req, res) => { res.json({ authenticated: true, authEnabled: false }); });
+    const requireAuth: RequestHandler = (_req, res, next) => {
+      res.setHeader('Cache-Control', 'no-store');
+      next();
+    };
+    return { router, requireAuth, sameOrigin };
+  }
+
+  if (password === 'CHANGE_ME') throw new Error('Configure APP_PASSWORD before starting the server');
   const salt = randomBytes(32);
   const passwordHash = scryptSync(password, salt, 32);
   const secret = randomBytes(32);
@@ -22,13 +43,6 @@ export function createAuth(password: string) {
     const actual = Buffer.from(signature);
     return actual.length === expected.length && timingSafeEqual(actual, expected);
   };
-  const sameOrigin: RequestHandler = (req, res, next) => {
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.headers.origin) {
-      try { if (new URL(req.headers.origin).host !== req.headers.host) return void res.status(403).json({ error: 'Invalid request origin' }); }
-      catch { return void res.status(403).json({ error: 'Invalid request origin' }); }
-    }
-    next();
-  };
   const requireAuth: RequestHandler = (req, res, next) => {
     res.setHeader('Cache-Control', 'no-store');
     if (!authenticated(req)) return void res.status(401).json({ error: 'Bitte melde dich an.' });
@@ -36,7 +50,7 @@ export function createAuth(password: string) {
   };
   const router = Router();
   router.use(sameOrigin);
-  router.get('/session', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ authenticated: authenticated(req) }); });
+  router.get('/session', (req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ authenticated: authenticated(req), authEnabled: true }); });
   router.post('/login', (req, res) => {
     const now = Date.now();
     for (const [key, entry] of attempts) if (entry.until <= now) attempts.delete(key);
