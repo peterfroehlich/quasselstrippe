@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { randomUUID, createHash } from 'node:crypto';
 import { getDatabase, transaction, getAllWords, getWordById, getProfileById, insertWord, insertWords, updateWord,
-  deleteWord, deleteWordsByLesson, recordReview, resetReviewProgress, resetToDefaults } from '../db/database.js';
+  deleteWord, deleteWordsByLesson, renameWordsLesson, recordReview, resetReviewProgress, resetToDefaults } from '../db/database.js';
 import { validateWord } from '../validation.js';
 
 export const wordsRouter = Router();
@@ -62,6 +62,24 @@ const deleteLesson = handle((req, res) => {
 });
 wordsRouter.post('/delete-lesson', deleteLesson);
 wordsRouter.delete('/by-lesson', deleteLesson);
+wordsRouter.post('/rename-lesson', handle((req, res) => {
+  const fromLesson = param(req.body?.fromLesson)?.trim();
+  const toLesson = param(req.body?.toLesson)?.trim();
+  if (!fromLesson || !toLesson) throw new Error('fromLesson and toLesson are required');
+  if (fromLesson.length > 200 || toLesson.length > 200) throw new Error('Lesson name is too long');
+  if (fromLesson === toLesson) throw new Error('New lesson name must be different');
+  const rawScope = param(req.body?.scope);
+  const lang = language(req.body?.language);
+  let updatedCount: number;
+  if (rawScope === 'shared' || req.body?.profileId === 'shared') {
+    updatedCount = renameWordsLesson(fromLesson, toLesson, lang, 'shared');
+  } else if (rawScope === 'profile') {
+    updatedCount = renameWordsLesson(fromLesson, toLesson, lang, 'profile', profile(req));
+  } else {
+    updatedCount = renameWordsLesson(fromLesson, toLesson, lang, 'visible', profile(req));
+  }
+  res.json({ success: true, updatedCount });
+}));
 wordsRouter.get('/:id', handle((req, res) => {
   const word = getWordById(String(req.params.id), param(req.query.profileId));
   res.status(word ? 200 : 404).json(word || { error: 'Word not found' });

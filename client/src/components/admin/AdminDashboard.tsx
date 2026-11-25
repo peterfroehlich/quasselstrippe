@@ -23,6 +23,7 @@ interface AdminDashboardProps {
   onUpdateWord: (word: WordItem) => Promise<void>;
   onDeleteWord: (id: string) => Promise<void>;
   onDeleteLesson: (lesson: string, scope?: string) => Promise<void>;
+  onRenameLesson: (fromLesson: string, toLesson: string, scope?: 'shared' | 'visible' | 'profile') => Promise<void>;
   onImportWords: (words: WordItem[]) => Promise<void>;
   onResetProgress: () => Promise<void>;
   onOpenSettings: () => void;
@@ -46,6 +47,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onUpdateWord,
   onDeleteWord,
   onDeleteLesson,
+  onRenameLesson,
   onImportWords,
   onResetProgress,
   onOpenSettings,
@@ -125,12 +127,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           language={language}
           profiles={profiles}
           activeProfile={activeProfile}
+          geminiApiKey={geminiApiKey}
+          aiConfig={aiConfig}
+          aiAvailable={aiAvailable}
           onUpdateWord={onUpdateWord}
+          onBatchUpdateWords={onAddWords}
           onDeleteWord={onDeleteWord}
           onDeleteLesson={onDeleteLesson}
+          onRenameLesson={onRenameLesson}
           onAddWord={onAddWord}
           onImportWords={onImportWords}
           onResetProgress={onResetProgress}
+          onOpenSettings={onOpenSettings}
         />
       ) : (
         <ProfileManager

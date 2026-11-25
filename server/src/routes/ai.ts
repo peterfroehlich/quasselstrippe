@@ -1,7 +1,7 @@
 import { validateWorksheet, validateGrade } from '../validation.js';
 import { Router, Request, Response } from 'express';
 import { getSettings } from '../db/database.js';
-import type { WorksheetAnalysisResponse, HandwritingGradeResponse } from '../types.js';
+import type { WorksheetAnalysisResponse, HandwritingGradeResponse, LessonReorganizationResponse } from '../types.js';
 
 export const aiRouter = Router();
 let activeRequests = 0;
@@ -598,5 +598,155 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
   } catch (error: any) {
     console.error('Handwriting grading error:', error);
     res.status(500).json({ error: error.message || 'Handwriting grading failed' });
+  }
+});
+
+// POST /api/ai/organize-lessons
+aiRouter.post('/organize-lessons', async (req: Request, res: Response) => {
+  try {
+    const { words, language = 'en', instruction = '', existingLessons = [] } = req.body || {};
+
+    if (!['en', 'la'].includes(language)) {
+      return res.status(400).json({ error: 'Invalid language' });
+    }
+    if (!Array.isArray(words) || words.length === 0 || words.length > 500) {
+      return res.status(400).json({ error: 'Zwischen 1 und 500 Vokabeln sind erforderlich.' });
+    }
+    if (typeof instruction !== 'string' || instruction.length > 2000) {
+      return res.status(400).json({ error: 'Invalid instruction' });
+    }
+
+    const sanitizedWords: Array<{ id: string; word: string; translation: string; lesson: string; partOfSpeech?: string; notes?: string }> = [];
+    for (const w of words) {
+      if (!w || typeof w !== 'object' || typeof w.id !== 'string' || !w.id.trim() || typeof w.word !== 'string' || !w.word.trim() || typeof w.translation !== 'string') {
+        return res.status(400).json({ error: 'Ungültige Vokabeldaten.' });
+      }
+      sanitizedWords.push({
+        id: w.id.trim(),
+        word: w.word.trim().slice(0, 200),
+        translation: w.translation.trim().slice(0, 200),
+        lesson: typeof w.lesson === 'string' && w.lesson.trim() ? w.lesson.trim().slice(0, 200) : 'Allgemein',
+        ...(typeof w.partOfSpeech === 'string' ? { partOfSpeech: w.partOfSpeech.slice(0, 40) } : {}),
+        ...(typeof w.notes === 'string' && w.notes.trim() ? { notes: w.notes.trim().slice(0, 150) } : {}),
+      });
+    }
+
+    const settings = getSettings();
+    const { config, validationError } = resolveAiConfig(req.body || {}, settings);
+    if (validationError) return void res.status(400).json({ error: validationError });
+    if (!config) return void res.status(400).json({ error: NOT_CONFIGURED_ERROR });
+
+    const targetLangName = language === 'en' ? 'Englisch' : 'Latein';
+    const existingList = Array.isArray(existingLessons)
+      ? existingLessons.filter((l: unknown): l is string => typeof l === 'string' && Boolean(l.trim())).map((l) => l.trim().slice(0, 200))
+      : [];
+    const userInstruction = instruction.trim() || 'Sortiere die Vokabeln sinnvoll thematisch in übersichtliche Schullektionen (ca. 8–15 Wörter pro Lektion) mit klaren deutschen oder zweisprachigen Lektionsnamen.';
+
+    const wordLines = sanitizedWords
+      .map((w) => `- id="${w.id}" | ${w.word} = ${w.translation}${w.partOfSpeech ? ` (${w.partOfSpeech})` : ''} [aktuell: ${w.lesson}]`)
+      .join('\n');
+
+    const systemPrompt = `Du bist ein erfahrener Fremdsprachenlehrer (${targetLangName}) für deutsche Schüler.
+Deine Aufgabe ist es, die folgende Vokabelliste in sinnvolle, übersichtliche Lektionen umzusortieren.
+
+Anweisung des Nutzers:
+"${userInstruction}"
+${existingList.length > 0 ? `\nVorhandene Lektionen im Bestand:\n${existingList.map((l) => `- ${l}`).join('\n')}\n` : ''}
+Regeln:
+1. Ordne JEDE gegebene Vokabel-ID genau einer Lektion zu. Keine ID weglassen, keine neuen IDs erfinden.
+2. Verwende konsistente, prägnante Lektionsnamen (maximal 80 Zeichen).
+3. Halte dich genau an die Anweisung des Nutzers (z.B. vorgegebene Lektionsnamen, Gruppengröße oder Themen).
+
+Vokabeln (${sanitizedWords.length}):
+${wordLines}
+
+Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke außerhalb des JSON:
+{
+  "summary": "Kurze deutsche Zusammenfassung der neuen Einteilung (1-2 Sätze)",
+  "assignments": [
+    { "id": "exakte-id", "lesson": "Neuer Lektionsname" }
+  ]
+}`;
+
+    const normalizeResponse = (parsed: any, model?: string): LessonReorganizationResponse => {
+      const byId = new Map<string, string>();
+      const rawAssignments = Array.isArray(parsed?.assignments) ? parsed.assignments : [];
+      for (const item of rawAssignments) {
+        if (item && typeof item.id === 'string' && typeof item.lesson === 'string' && item.lesson.trim()) {
+          byId.set(item.id.trim(), item.lesson.trim().slice(0, 200));
+        }
+      }
+      const assignments = sanitizedWords.map((w) => ({
+        id: w.id,
+        lesson: byId.get(w.id) || w.lesson,
+      }));
+      const summary = typeof parsed?.summary === 'string' && parsed.summary.trim()
+        ? parsed.summary.trim().slice(0, 400)
+        : `${assignments.length} Vokabeln neu zugeordnet.`;
+      return { summary, assignments, ...(model ? { model } : {}) };
+    };
+
+    if (config.provider === 'openai') {
+      const { text, model } = await callOpenAiCompatible({
+        endpointUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        models: config.models,
+        prompt: systemPrompt,
+        temperature: 0.2,
+        timeoutMs: 115000,
+      });
+      const parsed = extractJsonObject(text, 'KI-Antwort konnte nicht als Lektions-Zuordnung interpretiert werden.');
+      return void res.json(normalizeResponse(parsed, model));
+    }
+
+    let lastError: Error | null = null;
+    let resultData: LessonReorganizationResponse | null = null;
+
+    for (const model of GEMINI_MODELS) {
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(30000),
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
+              generationConfig: {
+                ...(model.startsWith('gemini-4') ? {} : { temperature: 0.2 }),
+                thinkingConfig: { thinkingLevel: 'low' },
+                responseMimeType: 'application/json',
+              },
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorJson = (await response.json().catch(() => null)) as any;
+          const errMsg = errorJson?.error?.message || `HTTP ${response.status}`;
+          throw new Error(`Gemini API (${model}): ${errMsg}`);
+        }
+
+        const data = (await response.json()) as any;
+        const parts = data.candidates?.[0]?.content?.parts || [];
+        const textPart = parts.find((p: any) => !p.thought && typeof p.text === 'string' && p.text.trim())?.text;
+        if (!textPart) throw new Error('Keine Antwort von Gemini erhalten.');
+
+        const parsed = extractJsonObject(textPart, 'Gemini-Antwort konnte nicht als Lektions-Zuordnung interpretiert werden.');
+        resultData = normalizeResponse(parsed, model);
+        break;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+      }
+    }
+
+    if (!resultData) {
+      throw lastError || new Error('KI-Sortierung fehlgeschlagen.');
+    }
+
+    res.json(resultData);
+  } catch (error: any) {
+    console.error('Lesson organization error:', error);
+    res.status(500).json({ error: error.message || 'Lesson organization failed' });
   }
 });

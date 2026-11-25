@@ -11,24 +11,32 @@ import {
   X,
   Layers,
   Filter,
-  User
+  User,
+  Sparkles
 } from 'lucide-react';
 import { PART_OF_SPEECH_LABELS } from '../../types/vocabulary';
-import type { WordItem, Language, PartOfSpeech, UserProfile } from '../../types/vocabulary';
+import type { WordItem, Language, PartOfSpeech, UserProfile, AiClientConfig } from '../../types/vocabulary';
 import { AudioButton } from '../common/AudioButton';
 import { exportWordsToJson } from '../../services/storage';
+import { LessonOrganizerModal } from './LessonOrganizerModal';
 
 interface WordManagerProps {
   words: WordItem[];
   language: Language;
   profiles?: UserProfile[];
   activeProfile?: UserProfile | null;
+  geminiApiKey?: string;
+  aiConfig?: AiClientConfig;
+  aiAvailable?: boolean;
   onUpdateWord: (word: WordItem) => Promise<void>;
+  onBatchUpdateWords: (words: WordItem[]) => Promise<void>;
   onDeleteWord: (id: string) => Promise<void>;
   onDeleteLesson: (lesson: string, scope?: string) => Promise<void>;
+  onRenameLesson: (fromLesson: string, toLesson: string, scope?: 'shared' | 'visible' | 'profile') => Promise<void>;
   onAddWord: (word: WordItem) => Promise<void>;
   onImportWords: (words: WordItem[]) => Promise<void>;
   onResetProgress: () => Promise<void>;
+  onOpenSettings?: () => void;
 }
 
 export const WordManager: React.FC<WordManagerProps> = ({
@@ -36,12 +44,18 @@ export const WordManager: React.FC<WordManagerProps> = ({
   language,
   profiles = [],
   activeProfile,
+  geminiApiKey,
+  aiConfig,
+  aiAvailable,
   onUpdateWord,
+  onBatchUpdateWords,
   onDeleteWord,
   onDeleteLesson,
+  onRenameLesson,
   onAddWord,
   onImportWords,
   onResetProgress,
+  onOpenSettings,
 }) => {
   const savingRef = useRef(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -51,7 +65,11 @@ export const WordManager: React.FC<WordManagerProps> = ({
   const [editFormData, setEditFormData] = useState<Partial<WordItem>>({});
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [lessonToDelete, setLessonToDelete] = useState<string | null>(null);
+  const [lessonToRename, setLessonToRename] = useState<string | null>(null);
+  const [targetLessonName, setTargetLessonName] = useState('');
+  const [isRenamingLesson, setIsRenamingLesson] = useState(false);
   const [isLessonModalOpen, setIsLessonModalOpen] = useState(false);
+  const [isOrganizerOpen, setIsOrganizerOpen] = useState(false);
   const [newWordData, setNewWordData] = useState<Partial<WordItem>>({
     word: '',
     translation: '',
@@ -86,6 +104,48 @@ export const WordManager: React.FC<WordManagerProps> = ({
     catch (error) { alert((error as Error).message); return; }
     if (selectedLesson === lesson) setSelectedLesson('all');
     setLessonToDelete(null);
+  };
+
+  const renameScope = (): 'shared' | 'visible' | 'profile' =>
+    selectedProfileScope === 'shared' ? 'shared' : selectedProfileScope === 'all' ? 'visible' : 'profile';
+
+  const openRenameLesson = (lesson: string) => {
+    setLessonToRename(lesson);
+    setTargetLessonName(lesson);
+  };
+
+  const lessonToRenameWordCount = lessonToRename
+    ? languageWords.filter((w) => {
+        if (w.lesson !== lessonToRename) return false;
+        const scope = renameScope();
+        if (scope === 'shared') return !w.profileId;
+        if (scope === 'profile') return w.profileId === selectedProfileScope;
+        return true;
+      }).length
+    : 0;
+
+  const trimmedTargetLesson = targetLessonName.trim();
+  const isMergingLesson = Boolean(
+    lessonToRename &&
+      trimmedTargetLesson &&
+      trimmedTargetLesson !== lessonToRename &&
+      lessons.includes(trimmedTargetLesson)
+  );
+
+  const handleExecuteRenameLesson = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!lessonToRename || !trimmedTargetLesson || trimmedTargetLesson === lessonToRename || isRenamingLesson) return;
+    setIsRenamingLesson(true);
+    try {
+      await onRenameLesson(lessonToRename, trimmedTargetLesson, renameScope());
+      if (selectedLesson === lessonToRename) setSelectedLesson(trimmedTargetLesson);
+      setLessonToRename(null);
+      setTargetLessonName('');
+    } catch (error) {
+      alert((error as Error).message);
+    } finally {
+      setIsRenamingLesson(false);
+    }
   };
 
   const filteredWords = useMemo(() => {
@@ -523,30 +583,51 @@ export const WordManager: React.FC<WordManagerProps> = ({
           </div>
 
           {selectedLesson !== 'all' && (
-            <button
-              type="button"
-              onClick={() => setLessonToDelete(selectedLesson)}
-              className="btn btn-sm"
-              style={{
-                background: 'rgba(239, 68, 68, 0.12)',
-                color: '#ef4444',
-                border: '1px solid rgba(239, 68, 68, 0.35)',
-                padding: '0.55rem 0.85rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                fontWeight: 500,
-                fontSize: '0.85rem',
-                borderRadius: 'var(--radius-md)',
-                flexShrink: 0,
-              }}
-              title={`Lektion "${selectedLesson}" mit allen Vokabeln löschen`}
-            >
-              <Trash2 size={15} />
-              <span>Lektion löschen</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => openRenameLesson(selectedLesson)}
+                className="btn btn-secondary btn-sm"
+                style={{
+                  padding: '0.55rem 0.85rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  whiteSpace: 'nowrap',
+                  fontSize: '0.85rem',
+                  flexShrink: 0,
+                }}
+                title={`Lektion "${selectedLesson}" umbenennen oder mit einer anderen Lektion zusammenführen`}
+              >
+                <Edit3 size={15} />
+                <span>Umbenennen / Zusammenführen</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLessonToDelete(selectedLesson)}
+                className="btn btn-sm"
+                style={{
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  color: '#ef4444',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  padding: '0.55rem 0.85rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  fontWeight: 500,
+                  fontSize: '0.85rem',
+                  borderRadius: 'var(--radius-md)',
+                  flexShrink: 0,
+                }}
+                title={`Lektion "${selectedLesson}" mit allen Vokabeln löschen`}
+              >
+                <Trash2 size={15} />
+                <span>Lektion löschen</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -1090,7 +1171,7 @@ export const WordManager: React.FC<WordManagerProps> = ({
             </div>
 
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.25rem' }}>
-              Hier siehst du alle angelegten Lektionen für {language === 'en' ? 'Englisch' : 'Latein'}. Du kannst einzelne Lektionen herausfiltern oder eine ganze Lektion mitsamt aller zugehörigen Vokabeln löschen.
+              Hier siehst du alle angelegten Lektionen für {language === 'en' ? 'Englisch' : 'Latein'}. Du kannst Lektionen herausfiltern, umbenennen, zusammenführen oder komplett löschen.
             </p>
 
             <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.6rem', paddingRight: '0.35rem', marginBottom: '1.25rem' }}>
@@ -1125,7 +1206,7 @@ export const WordManager: React.FC<WordManagerProps> = ({
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                         <button
                           type="button"
                           onClick={() => {
@@ -1133,9 +1214,20 @@ export const WordManager: React.FC<WordManagerProps> = ({
                             setIsLessonModalOpen(false);
                           }}
                           className={`btn btn-sm ${isCurrent ? 'btn-primary' : 'btn-secondary'}`}
-                          style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
+                          style={{ fontSize: '0.8rem', padding: '0.35rem 0.7rem' }}
                         >
                           {isCurrent ? 'Ausgewählt' : 'Anzeigen'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => openRenameLesson(lessonName)}
+                          className="btn btn-secondary btn-sm"
+                          style={{ fontSize: '0.8rem', padding: '0.35rem 0.65rem' }}
+                          title={`Lektion "${lessonName}" umbenennen oder zusammenführen`}
+                        >
+                          <Edit3 size={14} />
+                          <span>Umbenennen</span>
                         </button>
 
                         <button
@@ -1161,7 +1253,20 @@ export const WordManager: React.FC<WordManagerProps> = ({
               )}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLessonModalOpen(false);
+                  setIsOrganizerOpen(true);
+                }}
+                disabled={languageWords.length === 0}
+                className="btn btn-primary btn-sm"
+                title="Wörter per KI mit Vorschau in neue Lektionen umsortieren"
+              >
+                <Sparkles size={15} />
+                <span>Mit KI umsortieren (Vorschau)</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setIsLessonModalOpen(false)}
@@ -1171,6 +1276,171 @@ export const WordManager: React.FC<WordManagerProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {isOrganizerOpen && (
+        <LessonOrganizerModal
+          isOpen={isOrganizerOpen}
+          onClose={() => setIsOrganizerOpen(false)}
+          words={languageWords}
+          lessons={lessons}
+          language={language}
+          geminiApiKey={geminiApiKey}
+          aiConfig={aiConfig}
+          aiAvailable={aiAvailable}
+          onApplyWords={onBatchUpdateWords}
+          onOpenSettings={onOpenSettings}
+        />
+      )}
+
+      {/* Modal: Lektion umbenennen / zusammenführen */}
+      {lessonToRename && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(10, 15, 29, 0.8)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1001,
+            padding: '1rem',
+          }}
+          onClick={() => setLessonToRename(null)}
+        >
+          <form
+            onSubmit={handleExecuteRenameLesson}
+            className="glass-panel animate-scale-up"
+            style={{
+              maxWidth: '500px',
+              width: '100%',
+              padding: '1.75rem',
+              border: '1px solid var(--border-medium)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.6)',
+              background: 'var(--bg-surface)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Edit3 size={20} color="var(--primary-light)" />
+                <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff' }}>
+                  Lektion umbenennen / zusammenführen
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLessonToRename(null)}
+                className="btn btn-ghost btn-sm"
+                aria-label="Schließen"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div
+              style={{
+                background: 'var(--bg-surface-elevated)',
+                borderRadius: 'var(--radius-md)',
+                padding: '0.85rem 1rem',
+                marginBottom: '1rem',
+                border: '1px solid var(--border-subtle)',
+              }}
+            >
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                Aktuelle Lektion ({lessonToRenameWordCount} {lessonToRenameWordCount === 1 ? 'Vokabel' : 'Vokabeln'}):
+              </div>
+              <div style={{ fontWeight: 600, fontSize: '1rem', color: '#fff' }}>
+                📁 {lessonToRename}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '1rem' }}>
+              <label htmlFor="rename-lesson-input" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                Neuer Lektionsname
+              </label>
+              <input
+                id="rename-lesson-input"
+                type="text"
+                required
+                maxLength={200}
+                value={targetLessonName}
+                onChange={(e) => setTargetLessonName(e.target.value)}
+                placeholder="z.B. Unit 1: It's fun at home"
+                className="input-field"
+                style={{ width: '100%' }}
+                autoFocus
+              />
+            </div>
+
+            {lessons.filter((l) => l !== lessonToRename).length > 0 && (
+              <div style={{ marginBottom: '1rem' }}>
+                <label htmlFor="merge-lesson-select" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, marginBottom: '0.35rem' }}>
+                  Oder direkt mit bestehender Lektion zusammenführen
+                </label>
+                <select
+                  id="merge-lesson-select"
+                  value={lessons.includes(trimmedTargetLesson) && trimmedTargetLesson !== lessonToRename ? trimmedTargetLesson : ''}
+                  onChange={(e) => {
+                    if (e.target.value) setTargetLessonName(e.target.value);
+                  }}
+                  className="input-field"
+                  style={{ width: '100%' }}
+                >
+                  <option value="">Bestehende Ziel-Lektion wählen…</option>
+                  {lessons
+                    .filter((l) => l !== lessonToRename)
+                    .map((l) => (
+                      <option key={l} value={l}>
+                        {l} ({languageWords.filter((w) => w.lesson === l).length} Wörter)
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
+            <div
+              style={{
+                fontSize: '0.82rem',
+                padding: '0.6rem 0.8rem',
+                borderRadius: 'var(--radius-sm)',
+                background: isMergingLesson ? 'rgba(99, 102, 241, 0.14)' : 'var(--bg-surface-elevated)',
+                color: isMergingLesson ? 'var(--primary-light)' : 'var(--text-secondary)',
+                border: isMergingLesson ? '1px solid rgba(99, 102, 241, 0.35)' : '1px solid var(--border-subtle)',
+                marginBottom: '1.25rem',
+              }}
+            >
+              {isMergingLesson ? (
+                <span>
+                  ℹ️ Alle <strong>{lessonToRenameWordCount} Vokabeln</strong> werden mit <strong>„{trimmedTargetLesson}“</strong> zusammengeführt. Lernfortschritte bleiben vollständig erhalten.
+                </span>
+              ) : (
+                <span>
+                  Alle <strong>{lessonToRenameWordCount} Vokabeln</strong> erhalten den neuen Lektionsnamen. Lernfortschritte bleiben erhalten.
+                </span>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setLessonToRename(null)}
+                className="btn btn-secondary"
+              >
+                Abbrechen
+              </button>
+              <button
+                type="submit"
+                disabled={isRenamingLesson || !trimmedTargetLesson || trimmedTargetLesson === lessonToRename}
+                className="btn btn-primary"
+              >
+                <Check size={16} />
+                <span>{isMergingLesson ? 'Zusammenführen' : 'Umbenennen'}</span>
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

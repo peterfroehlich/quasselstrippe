@@ -492,6 +492,39 @@ export function deleteWordsByLesson(lesson: string, language: string | undefined
   return Number(result.changes);
 }
 
+export function renameWordsLesson(
+  fromLesson: string,
+  toLesson: string,
+  language: string | undefined,
+  scope: 'shared' | 'visible' | 'profile',
+  profileId?: string
+): number {
+  const db = getDatabase();
+  let query = 'UPDATE words SET lesson = ? WHERE lesson = ?';
+  const params: (string | number | null)[] = [toLesson, fromLesson];
+
+  if (language) {
+    query += ' AND language = ?';
+    params.push(language);
+  }
+
+  if (scope === 'shared') {
+    query += ' AND profile_id IS NULL';
+  } else if (scope === 'visible') {
+    if (!profileId) throw new Error('A valid profileId is required');
+    query += ' AND (profile_id IS NULL OR profile_id = ?)';
+    params.push(profileId);
+  } else {
+    if (!profileId) throw new Error('A valid profileId is required');
+    query += ' AND profile_id = ?';
+    params.push(profileId);
+  }
+
+  const stmt = db.prepare(query);
+  const result = stmt.run(...params);
+  return Number(result.changes);
+}
+
 export function recordReview(id: string, wasCorrect: boolean, profileId: string,
   eventId: string = randomUUID(), reviewedAt = Date.now(), promote = true): WordItem | null {
   if (!getProfileById(profileId)) throw new Error('Unknown profile');

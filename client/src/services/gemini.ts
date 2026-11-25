@@ -1,6 +1,6 @@
 import { validateWorksheet, validateGrade } from './validation';
-import type { Language, WorksheetAnalysisResponse, ExtractedWordCandidate, HandwritingGradeResponse, AiClientConfig } from '../types/vocabulary';
-import { ApiError, apiAnalyzeWorksheet, apiGradeHandwriting, apiTestAiConnection, apiListAiModels } from './api';
+import type { Language, WorksheetAnalysisResponse, ExtractedWordCandidate, HandwritingGradeResponse, AiClientConfig, LessonReorganizationResponse, WordItem } from '../types/vocabulary';
+import { ApiError, apiAnalyzeWorksheet, apiGradeHandwriting, apiTestAiConnection, apiListAiModels, apiOrganizeLessons } from './api';
 
 export interface SampleWorksheet {
   id: string;
@@ -712,5 +712,34 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
   }
 
   throw lastError || new Error('Handschrift-Bewertung fehlgeschlagen.');
+}
+
+export async function organizeLessonsWithAi(params: {
+  words: WordItem[];
+  language: Language;
+  instruction?: string;
+  existingLessons?: string[];
+  apiKey?: string;
+  aiConfig?: AiClientConfig;
+}): Promise<LessonReorganizationResponse> {
+  const payloadWords = params.words.map((w) => ({
+    id: w.id,
+    word: w.word,
+    translation: w.translation,
+    lesson: w.lesson,
+    partOfSpeech: w.partOfSpeech,
+    notes: w.notes,
+  }));
+
+  return apiOrganizeLessons({
+    words: payloadWords,
+    language: params.language,
+    instruction: params.instruction,
+    existingLessons: params.existingLessons,
+    apiKey: params.apiKey || params.aiConfig?.geminiApiKey,
+    aiBaseUrl: params.aiConfig?.aiBaseUrl?.trim() || undefined,
+    aiModel: params.aiConfig?.aiModel?.trim() || undefined,
+    aiApiKey: params.aiConfig?.aiApiKey?.trim() || undefined,
+  });
 }
 

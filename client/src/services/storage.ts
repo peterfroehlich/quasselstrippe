@@ -20,6 +20,7 @@ import {
   apiUpdateWord,
   apiDeleteWord,
   apiDeleteLesson,
+  apiRenameLesson,
   apiRecordReview,
   apiResetProgress,
   apiResetToDefaults,
@@ -304,13 +305,15 @@ const JOURNAL_KEY = 'quasselstrippe_sync_v2';
 type Operation = {
   id: string;
   kind: 'createProfile' | 'updateProfile' | 'deleteProfile' | 'addWords' | 'updateWord' |
-    'deleteWord' | 'deleteLesson' | 'review' | 'resetProgress' | 'resetDefaults' | 'settings';
+    'deleteWord' | 'deleteLesson' | 'renameLesson' | 'review' | 'resetProgress' | 'resetDefaults' | 'settings';
   profileId: string;
   words?: WordItem[];
   word?: WordItem;
   profile?: UserProfile;
   targetId?: string;
   lesson?: string;
+  fromLesson?: string;
+  toLesson?: string;
   language?: Language;
   scope?: string;
   wasCorrect?: boolean;
@@ -353,6 +356,16 @@ async function execute(op: Operation): Promise<void> {
       catch (error) { if (!(error instanceof ApiError && error.status === 404)) throw error; }
       break;
     case 'deleteLesson': await apiDeleteLesson(op.lesson!, op.language, op.scope || op.profileId, op.id); break;
+    case 'renameLesson':
+      await apiRenameLesson(
+        op.fromLesson!,
+        op.toLesson!,
+        op.language,
+        op.profileId,
+        (op.scope as 'shared' | 'visible' | 'profile' | undefined) || 'visible',
+        op.id
+      );
+      break;
     case 'review':
       await apiRecordReview(op.targetId!, op.wasCorrect!, op.profileId, op.id, op.reviewedAt!, op.promote!); break;
     case 'resetProgress': await apiResetProgress(op.profileId, op.id); break;
@@ -409,6 +422,20 @@ function apply(state: Journal, op: Operation) {
     case 'deleteWord': words = words.filter(w => w.id !== op.targetId); break;
     case 'deleteLesson': words = words.filter(w => !(w.lesson === op.lesson && (!op.language || w.language === op.language) &&
       (op.scope === 'shared' ? !w.profileId : w.profileId === op.profileId))); break;
+    case 'renameLesson': {
+      const matchesScope = (w: WordItem) =>
+        op.scope === 'shared'
+          ? !w.profileId
+          : op.scope === 'profile'
+          ? w.profileId === op.profileId
+          : !w.profileId || w.profileId === op.profileId;
+      words = words.map(w =>
+        w.lesson === op.fromLesson && (!op.language || w.language === op.language) && matchesScope(w)
+          ? { ...w, lesson: op.toLesson! }
+          : w
+      );
+      break;
+    }
     case 'review': words = words.map(w => w.id === op.targetId ? nextReviewState(w, op.wasCorrect!, op.reviewedAt, op.promote) : w); break;
     case 'resetProgress': words = words.map(clean); break;
     case 'resetDefaults':
@@ -431,6 +458,19 @@ function apply(state: Journal, op: Operation) {
     } else if (op.kind === 'deleteWord') state.words[profileId] = snapshot.filter(w => w.id !== op.targetId);
     else if (op.kind === 'deleteLesson') state.words[profileId] = snapshot.filter(w => !(w.lesson === op.lesson &&
       (!op.language || w.language === op.language) && (op.scope === 'shared' ? !w.profileId : w.profileId === op.profileId)));
+    else if (op.kind === 'renameLesson') {
+      const matchesScope = (w: WordItem) =>
+        op.scope === 'shared'
+          ? !w.profileId
+          : op.scope === 'profile'
+          ? w.profileId === op.profileId
+          : !w.profileId || w.profileId === op.profileId;
+      state.words[profileId] = snapshot.map(w =>
+        w.lesson === op.fromLesson && (!op.language || w.language === op.language) && matchesScope(w)
+          ? { ...w, lesson: op.toLesson! }
+          : w
+      );
+    }
     else if (op.kind === 'deleteProfile') state.words[profileId] = snapshot.filter(w => w.profileId !== op.targetId);
   }
   state.stats = {};
@@ -516,6 +556,19 @@ export async function deleteWord(id: string, profileId = getActiveProfileId()): 
 }
 export async function deleteLesson(lesson: string, language?: Language, profileId = getActiveProfileId(), scope = profileId): Promise<WordItem[]> {
   return mutate({ id: crypto.randomUUID(), kind: 'deleteLesson', profileId, lesson, language, scope });
+}
+export async function renameLesson(
+  fromLesson: string,
+  toLesson: string,
+  language?: Language,
+  profileId = getActiveProfileId(),
+  scope: 'shared' | 'visible' | 'profile' = 'visible'
+): Promise<WordItem[]> {
+  const from = fromLesson.trim();
+  const to = toLesson.trim();
+  if (!from || !to) throw new Error('Bitte gib einen Lektionsnamen ein.');
+  if (from === to) throw new Error('Der neue Lektionsname muss sich vom alten unterscheiden.');
+  return mutate({ id: crypto.randomUUID(), kind: 'renameLesson', profileId, fromLesson: from, toLesson: to, language, scope });
 }
 export async function recordReviewProgress(wordId: string, wasCorrect: boolean, profileId = getActiveProfileId(), promote = true): Promise<WordItem[]> {
   return mutate({ id: crypto.randomUUID(), kind: 'review', profileId, targetId: wordId, wasCorrect, promote, reviewedAt: Date.now() });

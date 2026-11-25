@@ -16,6 +16,7 @@ import {
   updateWord,
   deleteWord,
   deleteLesson,
+  renameLesson,
   recordReviewProgress,
   resetReviewProgress,
   resetToDefaults,
@@ -171,6 +172,9 @@ const AuthenticatedApp: React.FC<{ onLogout?: () => void }> = ({ onLogout }) => 
   const handleDeleteLesson = async (lesson: string, lessonScope?: string) => {
     await changeWords(() => deleteLesson(lesson, activeLanguage, activeProfile?.id, lessonScope));
   };
+  const handleRenameLesson = async (fromLesson: string, toLesson: string, lessonScope?: 'shared' | 'visible' | 'profile') => {
+    await changeWords(() => renameLesson(fromLesson, toLesson, activeLanguage, activeProfile?.id, lessonScope));
+  };
   const handleImportWords = async (items: WordItem[]) => {
     const sanitized = items.map(item => ({ ...item, id: crypto.randomUUID(),
       profileId: activeProfile?.id, box: 1, correctCount: 0, incorrectCount: 0, lastReviewedAt: undefined }));
@@ -263,6 +267,7 @@ const AuthenticatedApp: React.FC<{ onLogout?: () => void }> = ({ onLogout }) => 
             onUpdateWord={handleUpdateWord}
             onDeleteWord={handleDeleteWord}
             onDeleteLesson={handleDeleteLesson}
+            onRenameLesson={handleRenameLesson}
             onImportWords={handleImportWords}
             onResetProgress={handleResetProgress}
             onOpenSettings={() => setIsSettingsOpen(true)}

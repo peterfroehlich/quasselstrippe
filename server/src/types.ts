@@ -120,3 +120,14 @@ export interface HandwritingGradeResponse {
   model?: string;
 }
 
+export interface LessonReorganizationAssignment {
+  id: string;
+  lesson: string;
+}
+
+export interface LessonReorganizationResponse {
+  summary: string;
+  assignments: LessonReorganizationAssignment[];
+  model?: string;
+}
+

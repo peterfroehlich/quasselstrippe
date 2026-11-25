@@ -1,4 +1,4 @@
-import type { WordItem, AppSettings, Language, WorksheetAnalysisResponse, UserProfile, LearnerStats, HandwritingGradeResponse } from '../types/vocabulary';
+import type { WordItem, AppSettings, Language, WorksheetAnalysisResponse, UserProfile, LearnerStats, HandwritingGradeResponse, LessonReorganizationResponse } from '../types/vocabulary';
 
 const API_BASE = '/api';
 export class ApiError extends Error {
@@ -183,6 +183,26 @@ export async function apiDeleteLesson(lesson: string, language?: Language, profi
   return res.json();
 }
 
+export async function apiRenameLesson(
+  fromLesson: string,
+  toLesson: string,
+  language?: Language,
+  profileId?: string,
+  scope?: 'shared' | 'visible' | 'profile',
+  operationId?: string
+): Promise<{ updatedCount: number }> {
+  const res = await request(`${API_BASE}/words/rename-lesson`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(operationId ? { 'X-Operation-Id': operationId } : {}) },
+    body: JSON.stringify({ fromLesson, toLesson, language, profileId, scope }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Failed to rename lesson');
+  }
+  return res.json();
+}
+
 export async function apiRecordReview(wordId: string, wasCorrect: boolean, profileId: string, eventId: string, reviewedAt: number, promote: boolean): Promise<WordItem> {
   const res = await request(`${API_BASE}/words/${encodeURIComponent(wordId)}/review`, {
     method: 'POST',
@@ -314,6 +334,29 @@ export async function apiGradeHandwriting(params: {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || 'Handwriting grading failed on server');
+  }
+  return res.json();
+}
+
+export async function apiOrganizeLessons(params: {
+  words: Array<{ id: string; word: string; translation: string; lesson: string; partOfSpeech?: string; notes?: string }>;
+  language: Language;
+  instruction?: string;
+  existingLessons?: string[];
+  apiKey?: string;
+  aiBaseUrl?: string;
+  aiModel?: string;
+  aiApiKey?: string;
+}): Promise<LessonReorganizationResponse> {
+  const res = await request(`${API_BASE}/ai/organize-lessons`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(125000),
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Lesson organization failed on server');
   }
   return res.json();
 }

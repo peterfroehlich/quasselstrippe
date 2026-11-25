@@ -88,6 +88,38 @@ test('lesson deletion requires a scope and preserves other profiles and shared w
   await call('/words/delete-lesson', { method: 'POST', body: { lesson: 'Collision', profileId: 'shared' } });
   assert.equal(db.getWordById('owner-null'), null); assert.ok(db.getWordById('owner-b'));
 });
+test('lesson rename and merge preserves progress and respects profile scope', async () => {
+  db.insertWord(word('shared-a', null, 'Unit A'));
+  db.insertWord(word('def-a', 'default', 'Unit A'));
+  db.insertWord(word('b-a', 'b', 'Unit A'));
+  db.insertWord(word('shared-b', null, 'Unit B'));
+  db.recordReview('shared-a', true, 'default');
+  db.recordReview('def-a', true, 'default');
+
+  // Rename visible words for 'default' (shared + default) into existing 'Unit B' (merge)
+  const res = await call('/words/rename-lesson', {
+    method: 'POST',
+    operationId: 'merge-unit-a',
+    body: { fromLesson: 'Unit A', toLesson: 'Unit B', language: 'en', profileId: 'default', scope: 'visible' },
+  });
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).updatedCount, 2);
+  assert.equal(db.getWordById('shared-a', 'default').lesson, 'Unit B');
+  assert.equal(db.getWordById('shared-a', 'default').box, 2);
+  assert.equal(db.getWordById('def-a', 'default').lesson, 'Unit B');
+  assert.equal(db.getWordById('def-a', 'default').box, 2);
+  // Profile b's private word in Unit A is untouched
+  assert.equal(db.getWordById('b-a', 'b').lesson, 'Unit A');
+
+  // Replaying with same X-Operation-Id is idempotent
+  const replay = await call('/words/rename-lesson', {
+    method: 'POST',
+    operationId: 'merge-unit-a',
+    body: { fromLesson: 'Unit A', toLesson: 'Unit B', language: 'en', profileId: 'default', scope: 'visible' },
+  });
+  assert.equal(replay.status, 200);
+  assert.equal((await replay.json()).updatedCount, 2);
+});
 test('replayed review events count once and do not leak to other learners', async () => {
   const body = { profileId: 'b', wasCorrect: true, eventId: 'lost-response', reviewedAt: Date.now(), promote: true };
   for (let i = 0; i < 2; i++) assert.equal((await call('/words/en-1/review', { method: 'POST', body })).status, 200);

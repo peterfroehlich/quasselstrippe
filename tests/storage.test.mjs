@@ -58,6 +58,18 @@ beforeEach(() => {
     if (path.startsWith('/api/words/') && method === 'DELETE') {
       server.words = server.words.filter(w => w.id !== path.split('/').at(-1)); return response({ success: true });
     }
+    if (path === '/api/words/rename-lesson' && method === 'POST') {
+      let updatedCount = 0;
+      server.words = server.words.map(w => {
+        const matchesScope = body.scope === 'shared' ? !w.profileId : body.scope === 'profile' ? w.profileId === profileId : !w.profileId || w.profileId === profileId;
+        if (w.lesson === body.fromLesson && (!body.language || w.language === body.language) && matchesScope) {
+          updatedCount++;
+          return { ...w, lesson: body.toLesson };
+        }
+        return w;
+      });
+      return response({ success: true, updatedCount });
+    }
     if (path === '/api/settings') { if (method === 'PUT') server.settings = { ...server.settings, ...body }; return response(server.settings); }
     return response({ error: 'Missing test endpoint' }, 404);
   };
@@ -167,4 +179,17 @@ test('offline settings survive reconnect and never include the personal key in q
   assert.equal(settings.aiModel, 'vision-model');
   assert.equal(settings.aiApiKey, 'local-bearer-token');
   assert.equal(server.settings.aiBaseUrl, undefined);
+});
+test('offline lesson rename/merge updates cached profiles and syncs on reconnect', async () => {
+  await storage.loadWords(undefined, 'default'); await storage.loadWords(undefined, 'b'); offline = true;
+  const updated = await storage.renameLesson('Test', 'Unit 1', 'en', 'default', 'visible');
+  assert.equal(updated.find(w => w.id === 'english').lesson, 'Unit 1');
+  assert.equal(updated.find(w => w.id === 'latin').lesson, 'Test');
+  const other = await storage.loadWords(undefined, 'b');
+  assert.equal(other.find(w => w.id === 'english').lesson, 'Unit 1');
+  assert.equal(other.find(w => w.id === 'private-b').lesson, 'Test');
+  offline = false;
+  const synced = await storage.loadWords(undefined, 'default');
+  assert.equal(synced.find(w => w.id === 'english').lesson, 'Unit 1');
+  assert.equal(journal().pending.length, 0);
 });

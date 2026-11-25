@@ -222,3 +222,70 @@ test('generic OpenAI-compatible endpoint works via env vars (optional auth) and 
     }
   }
 });
+
+test('organize-lessons maps words via OpenAI-compatible endpoint and preserves omitted word lessons', async (t) => {
+  const previousEnv = {
+    DATABASE_PATH: process.env.DATABASE_PATH,
+    AI_BASE_URL: process.env.AI_BASE_URL,
+    AI_MODEL: process.env.AI_MODEL,
+    AI_API_KEY: process.env.AI_API_KEY,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  };
+  process.env.DATABASE_PATH = ':memory:';
+  delete process.env.GEMINI_API_KEY;
+  process.env.AI_BASE_URL = 'http://reclopsy:11435/v1';
+  process.env.AI_MODEL = 'gemini-4-hydrogen-low';
+  delete process.env.AI_API_KEY;
+
+  const app = express();
+  app.use(express.json());
+  app.use(aiRouter);
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  const originalFetch = globalThis.fetch;
+
+  t.mock.method(globalThis, 'fetch', async () => Response.json({
+    model: 'gemini-4-hydrogen-low',
+    choices: [{
+      message: {
+        content: JSON.stringify({
+          summary: 'Nach Schule und Freizeit gruppiert.',
+          assignments: [
+            { id: 'w1', lesson: 'Unit 1: Schule' },
+            { id: 'unknown-id', lesson: 'Sollte ignoriert werden' },
+          ],
+        }),
+      },
+    }],
+  }));
+
+  try {
+    const res = await originalFetch(`http://127.0.0.1:${server.address().port}/organize-lessons`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        language: 'en',
+        instruction: 'Nach Themen sortieren',
+        words: [
+          { id: 'w1', word: 'desk', translation: 'Schreibtisch', lesson: 'Unsortiert' },
+          { id: 'w2', word: 'ball', translation: 'Ball', lesson: 'Alt' },
+        ],
+      }),
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.summary, 'Nach Schule und Freizeit gruppiert.');
+    assert.equal(data.model, 'gemini-4-hydrogen-low');
+    assert.deepEqual(data.assignments, [
+      { id: 'w1', lesson: 'Unit 1: Schule' },
+      { id: 'w2', lesson: 'Alt' },
+    ]);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+    closeDatabase();
+    for (const [k, v] of Object.entries(previousEnv)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
