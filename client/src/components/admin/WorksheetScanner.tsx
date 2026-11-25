@@ -16,7 +16,8 @@ import type {
   Language, 
   WordItem, 
   ExtractedWordCandidate,
-  PartOfSpeech
+  PartOfSpeech,
+  AiClientConfig
 } from '../../types/vocabulary';
 import { 
   analyzeWorksheetWithGemini, 
@@ -28,6 +29,7 @@ import { AudioButton } from '../common/AudioButton';
 interface WorksheetScannerProps {
   language: Language;
   geminiApiKey: string;
+  aiConfig?: AiClientConfig;
   aiAvailable?: boolean;
   onAddWords: (newWords: WordItem[]) => Promise<void>;
   onOpenSettings: () => void;
@@ -36,6 +38,7 @@ interface WorksheetScannerProps {
 export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
   language,
   geminiApiKey,
+  aiConfig,
   aiAvailable,
   onAddWords,
   onOpenSettings,
@@ -111,8 +114,8 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
       return;
     }
 
-    if (!geminiApiKey && !aiAvailable) {
-      setError('Für die automatische Foto-Erkennung mit deiner eigenen Kamera/Datei wird ein Gemini API-Key benötigt. Klicke auf "Einstellungen", um deinen Key einzugeben, oder teste die Erkennung mit einem unserer Beispiel-Arbeitsblätter!');
+    if (!geminiApiKey && !aiConfig?.aiBaseUrl && !aiAvailable) {
+      setError('Für die automatische Foto-Erkennung mit deiner eigenen Kamera/Datei wird ein Modell-Endpunkt oder ein Gemini API-Key benötigt. Klicke auf "Einstellungen", um die Verbindung zu konfigurieren, oder teste die Erkennung mit einem unserer Beispiel-Arbeitsblätter!');
       return;
     }
 
@@ -126,7 +129,8 @@ export const WorksheetScanner: React.FC<WorksheetScannerProps> = ({
         mimeType,
         language,
         lessonName,
-        geminiApiKey
+        geminiApiKey,
+        aiConfig
       );
 
       setAnalysisResult(result);

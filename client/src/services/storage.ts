@@ -42,6 +42,9 @@ export const DEFAULT_PROFILE: UserProfile = {
 
 export const DEFAULT_SETTINGS: AppSettings = {
   geminiApiKey: '',
+  aiBaseUrl: '',
+  aiModel: '',
+  aiApiKey: '',
   activeLanguage: 'en',
   speechRate: 1.0,
   autoPlayAudio: true,
@@ -534,7 +537,13 @@ export async function loadSettingsAsync(): Promise<AppSettings> {
     if (!(await flush(state))) return local;
     try {
       const remote = await apiGetSettings();
-      const settings = { ...remote, geminiApiKey: local.geminiApiKey };
+      const settings = {
+        ...remote,
+        geminiApiKey: local.geminiApiKey,
+        aiBaseUrl: local.aiBaseUrl || '',
+        aiModel: local.aiModel || '',
+        aiApiKey: local.aiApiKey || '',
+      };
       localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
       return settings;
     } catch (error) { if (!retryable(error)) throw error; return local; }
@@ -544,7 +553,14 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
   return serial(async () => {
     const state = await readJournal();
     await flush(state);
-    const { geminiApiKey: _key, aiAvailable: _available, ...preferences } = settings;
+    const {
+      geminiApiKey: _key,
+      aiBaseUrl: _baseUrl,
+      aiModel: _model,
+      aiApiKey: _aiKey,
+      aiAvailable: _available,
+      ...preferences
+    } = settings;
     state.pending.push({ id: crypto.randomUUID(), kind: 'settings', profileId: getActiveProfileId(), settings: preferences });
     await persist(state);
     localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));

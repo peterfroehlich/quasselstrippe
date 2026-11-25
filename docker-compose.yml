@@ -26,6 +26,9 @@ services:
       - COOKIE_SECURE=${COOKIE_SECURE:-false}
       - NODE_ENV=production
       - APP_PASSWORD=${APP_PASSWORD:?Set APP_PASSWORD in .env before starting}
+      - AI_BASE_URL=${AI_BASE_URL:-}
+      - AI_MODEL=${AI_MODEL:-}
+      - AI_API_KEY=${AI_API_KEY:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
       # Persistent SQLite database storage

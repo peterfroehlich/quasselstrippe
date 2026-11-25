@@ -14,23 +14,321 @@ aiRouter.use((_req, res, next) => {
   next();
 });
 
+type ResolvedAiConfig =
+  | { provider: 'openai'; baseUrl: string; apiKey: string; models: string[] }
+  | { provider: 'gemini'; apiKey: string };
+
+const GEMINI_MODELS = ['gemini-3.5-flash-lite', 'gemini-4-hydrogen'];
+const NOT_CONFIGURED_ERROR =
+  'Kein KI-Endpunkt konfiguriert. Bitte einen OpenAI-kompatiblen Endpunkt (AI_BASE_URL) oder einen Gemini API-Schlüssel (GEMINI_API_KEY) in den Einstellungen oder auf dem Server hinterlegen.';
+
+export function resolveChatCompletionsUrl(rawBaseUrl: string): string {
+  const trimmed = rawBaseUrl.trim().replace(/\/+$/, '');
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error('Ungültige Modell-Endpunkt-URL.');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Modell-Endpunkt muss http:// oder https:// verwenden.');
+  }
+  const pathname = parsed.pathname.replace(/\/+$/, '');
+  if (pathname.endsWith('/chat/completions')) {
+    return `${parsed.origin}${pathname}`;
+  }
+  if (!pathname) {
+    return `${parsed.origin}/v1/chat/completions`;
+  }
+  return `${parsed.origin}${pathname}/chat/completions`;
+}
+
+export function resolveModelsUrl(rawBaseUrl: string): string {
+  const completionsUrl = resolveChatCompletionsUrl(rawBaseUrl);
+  return completionsUrl.replace(/\/chat\/completions$/, '/models');
+}
+
+function parseModelList(raw?: string): string[] {
+  if (!raw) return ['default'];
+  const models = raw.split(',').map((m) => m.trim()).filter(Boolean);
+  return models.length > 0 ? models : ['default'];
+}
+
+function extractJsonObject(text: string, parseErrorMessage: string): any {
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const jsonStr = jsonMatch ? jsonMatch[0] : text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+    return JSON.parse(jsonStr);
+  } catch {
+    throw new Error(parseErrorMessage);
+  }
+}
+
+function extractOpenAiContent(data: any): string | undefined {
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content === 'string' && content.trim()) {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    const joined = content
+      .filter((part: any) => part && typeof part.text === 'string')
+      .map((part: any) => part.text)
+      .join('\n')
+      .trim();
+    if (joined) return joined;
+  }
+  return undefined;
+}
+
+function resolveAiConfig(
+  body: Record<string, any>,
+  settings: { geminiApiKey: string }
+): { config: ResolvedAiConfig | null; validationError?: string } {
+  const { apiKey: customApiKey, aiBaseUrl: customBaseUrl, aiModel: customModel, aiApiKey: customOpenAiKey } = body;
+
+  if (customApiKey !== undefined && typeof customApiKey !== 'string') {
+    return { config: null, validationError: 'Invalid API key' };
+  }
+  if (customBaseUrl !== undefined && typeof customBaseUrl !== 'string') {
+    return { config: null, validationError: 'Invalid AI base URL' };
+  }
+  if (customModel !== undefined && typeof customModel !== 'string') {
+    return { config: null, validationError: 'Invalid AI model' };
+  }
+  if (customOpenAiKey !== undefined && typeof customOpenAiKey !== 'string') {
+    return { config: null, validationError: 'Invalid AI API key' };
+  }
+
+  const envBaseUrl = process.env.AI_BASE_URL?.trim();
+  if (envBaseUrl) {
+    try {
+      const endpointUrl = resolveChatCompletionsUrl(envBaseUrl);
+      return {
+        config: {
+          provider: 'openai',
+          baseUrl: endpointUrl,
+          apiKey: process.env.AI_API_KEY?.trim() || '',
+          models: parseModelList(process.env.AI_MODEL),
+        },
+      };
+    } catch (err) {
+      return { config: null, validationError: err instanceof Error ? err.message : 'Invalid AI_BASE_URL' };
+    }
+  }
+
+  const envGeminiKey = process.env.GEMINI_API_KEY?.trim();
+  if (envGeminiKey) {
+    return { config: { provider: 'gemini', apiKey: envGeminiKey } };
+  }
+
+  const clientBaseUrl = customBaseUrl?.trim();
+  if (clientBaseUrl) {
+    try {
+      const endpointUrl = resolveChatCompletionsUrl(clientBaseUrl);
+      return {
+        config: {
+          provider: 'openai',
+          baseUrl: endpointUrl,
+          apiKey: customOpenAiKey?.trim() || '',
+          models: parseModelList(customModel),
+        },
+      };
+    } catch (err) {
+      return { config: null, validationError: err instanceof Error ? err.message : 'Ungültige Modell-Endpunkt-URL.' };
+    }
+  }
+
+  const geminiKey = customApiKey?.trim() || settings.geminiApiKey?.trim();
+  if (geminiKey) {
+    return { config: { provider: 'gemini', apiKey: geminiKey } };
+  }
+
+  return { config: null };
+}
+
+async function callOpenAiCompatible(params: {
+  endpointUrl: string;
+  apiKey: string;
+  models: string[];
+  prompt: string;
+  mimeType?: string;
+  cleanBase64?: string;
+  temperature: number;
+  maxTokens?: number;
+  timeoutMs: number;
+  expectJson?: boolean;
+}): Promise<{ text: string; model: string }> {
+  const { endpointUrl, apiKey, models, prompt, mimeType, cleanBase64, temperature, maxTokens, timeoutMs, expectJson = true } = params;
+  let lastError: Error | null = null;
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  const content: any =
+    cleanBase64 && mimeType
+      ? [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${cleanBase64}` } },
+        ]
+      : prompt;
+
+  for (const model of models) {
+    try {
+      const sendRequest = async (includeResponseFormat: boolean) => {
+        const payload: Record<string, any> = {
+          model,
+          messages: [{ role: 'user', content }],
+          temperature,
+        };
+        if (maxTokens !== undefined) {
+          payload.max_tokens = maxTokens;
+        }
+        if (includeResponseFormat && expectJson) {
+          payload.response_format = { type: 'json_object' };
+        }
+        return fetch(endpointUrl, {
+          method: 'POST',
+          headers,
+          signal: AbortSignal.timeout(timeoutMs),
+          body: JSON.stringify(payload),
+        });
+      };
+
+      let response = await sendRequest(true);
+      // Some OpenAI-compatible gateways/models do not support response_format; retry once without it on 400.
+      if (response.status === 400 && expectJson) {
+        response = await sendRequest(false);
+      }
+
+      if (!response.ok) {
+        const errorJson = (await response.json().catch(() => null)) as any;
+        const errMsg = errorJson?.error?.message || errorJson?.message || `HTTP ${response.status}`;
+        throw new Error(`Modell-Endpunkt (${model}): ${errMsg}`);
+      }
+
+      const data = (await response.json()) as any;
+      const text = extractOpenAiContent(data);
+      if (!text) {
+        throw new Error('Keine Antwort vom Modell-Endpunkt erhalten.');
+      }
+
+      const resolvedModel = typeof data.model === 'string' && data.model.trim() ? data.model.trim() : model;
+      return { text, model: resolvedModel };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+
+  throw lastError || new Error('Anfrage an den Modell-Endpunkt fehlgeschlagen.');
+}
+
+// POST /api/ai/models
+aiRouter.post('/models', async (req: Request, res: Response) => {
+  try {
+    const settings = getSettings();
+    const { config, validationError } = resolveAiConfig(req.body || {}, settings);
+    if (validationError) return void res.status(400).json({ error: validationError });
+    if (!config || config.provider !== 'openai') {
+      return void res.status(400).json({ error: 'Kein OpenAI-kompatibler Modell-Endpunkt konfiguriert.' });
+    }
+
+    const modelsUrl = resolveModelsUrl(config.baseUrl);
+    const headers: Record<string, string> = {};
+    if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
+
+    const response = await fetch(modelsUrl, {
+      method: 'GET',
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) {
+      const errJson = (await response.json().catch(() => null)) as any;
+      const errMsg = errJson?.error?.message || errJson?.message || `HTTP ${response.status}`;
+      return void res.status(502).json({ error: `Modellliste konnte nicht geladen werden: ${errMsg}` });
+    }
+
+    const data = (await response.json()) as any;
+    const rawList = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
+    const models = rawList
+      .map((item: any) => (typeof item === 'string' ? item : typeof item?.id === 'string' ? item.id : typeof item?.name === 'string' ? item.name : ''))
+      .map((id: string) => id.trim())
+      .filter(Boolean);
+
+    res.json({ models });
+  } catch (error: any) {
+    res.status(502).json({ error: error?.message || 'Modellliste konnte nicht geladen werden.' });
+  }
+});
+
+// POST /api/ai/test
+aiRouter.post('/test', async (req: Request, res: Response) => {
+  try {
+    const settings = getSettings();
+    const { config, validationError } = resolveAiConfig(req.body || {}, settings);
+    if (validationError) return void res.status(400).json({ error: validationError });
+    if (!config) return void res.status(400).json({ error: NOT_CONFIGURED_ERROR });
+
+    if (config.provider === 'openai') {
+      const { model } = await callOpenAiCompatible({
+        endpointUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        models: config.models,
+        prompt: 'Antworte nur mit: OK',
+        temperature: 0,
+        maxTokens: 16,
+        timeoutMs: 10000,
+        expectJson: false,
+      });
+      return void res.json({ ok: true, provider: 'openai', model });
+    }
+
+    let lastError = '';
+    for (const model of GEMINI_MODELS) {
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(5000),
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: 'Antworte nur mit: OK' }] }],
+              generationConfig: { thinkingConfig: { thinkingLevel: 'low' } },
+            }),
+          }
+        );
+        if (response.ok) {
+          return void res.json({ ok: true, provider: 'gemini', model });
+        }
+        const errJson = (await response.json().catch(() => null)) as any;
+        lastError = errJson?.error?.message || `HTTP ${response.status}`;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : 'Netzwerkfehler';
+      }
+    }
+    res.status(502).json({ error: `Gemini API-Fehler: ${lastError || 'Unbekannter Fehler'}` });
+  } catch (error: any) {
+    res.status(502).json({ error: error?.message || 'Verbindungstest fehlgeschlagen.' });
+  }
+});
+
 // POST /api/ai/analyze-worksheet
 aiRouter.post('/analyze-worksheet', async (req: Request, res: Response) => {
   try {
-    const { base64Data, mimeType = 'image/jpeg', language = 'en', suggestedLesson = '', apiKey: customApiKey } = req.body;
+    const { base64Data, mimeType = 'image/jpeg', language = 'en', suggestedLesson = '' } = req.body;
 
     if (typeof base64Data !== 'string' || !base64Data || base64Data.length > 45000000 || !['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(mimeType) || !['en', 'la'].includes(language)) {
       return res.status(400).json({ error: 'base64Data is required' });
     }
 
     const settings = getSettings();
-    if (customApiKey !== undefined && typeof customApiKey !== 'string') return void res.status(400).json({ error: 'Invalid API key' });
-    const apiKey = process.env.GEMINI_API_KEY || customApiKey || settings.geminiApiKey;
+    const { config, validationError } = resolveAiConfig(req.body || {}, settings);
+    if (validationError) return void res.status(400).json({ error: validationError });
 
-    if (!apiKey) {
-      return res.status(400).json({
-        error: 'Kein Gemini API-Schlüssel konfiguriert. Bitte in den Einstellungen hinterlegen oder als GEMINI_API_KEY im Docker-Container angeben.',
-      });
+    if (!config) {
+      return res.status(400).json({ error: NOT_CONFIGURED_ERROR });
     }
 
     const targetLangName = language === 'en' ? 'Englisch' : 'Latein';
@@ -67,14 +365,29 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 }`;
 
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-    const models = ['gemini-3.5-flash-lite', 'gemini-4-hydrogen'];
+
+    if (config.provider === 'openai') {
+      const { text } = await callOpenAiCompatible({
+        endpointUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        models: config.models,
+        prompt: systemPrompt,
+        mimeType,
+        cleanBase64,
+        temperature: 0.2,
+        timeoutMs: 45000,
+      });
+      const parsed = extractJsonObject(text, 'KI-Antwort konnte nicht als Vokabelliste interpretiert werden.');
+      return void res.json(validateWorksheet(parsed, language, suggestedLesson));
+    }
+
     let lastError: Error | null = null;
     let resultData: WorksheetAnalysisResponse | null = null;
 
-    for (const model of models) {
+    for (const model of GEMINI_MODELS) {
       try {
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -116,15 +429,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
           throw new Error('Keine Antwort von Gemini erhalten.');
         }
 
-        let parsed: any;
-        try {
-          const jsonMatch = textPart.match(/\{[\s\S]*\}/);
-          const jsonStr = jsonMatch ? jsonMatch[0] : textPart.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-          parsed = JSON.parse(jsonStr);
-        } catch {
-          throw new Error('Gemini-Antwort konnte nicht als Vokabelliste interpretiert werden.');
-        }
-
+        const parsed = extractJsonObject(textPart, 'Gemini-Antwort konnte nicht als Vokabelliste interpretiert werden.');
         resultData = validateWorksheet(parsed, language, suggestedLesson);
         break; // Successfully obtained response!
       } catch (err) {
@@ -146,7 +451,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 // POST /api/ai/grade-handwriting
 aiRouter.post('/grade-handwriting', async (req: Request, res: Response) => {
   try {
-    const { base64Data, mimeType = 'image/jpeg', expectedWord = '', language = 'en', apiKey: customApiKey } = req.body;
+    const { base64Data, mimeType = 'image/jpeg', expectedWord = '', language = 'en' } = req.body;
 
     if (typeof base64Data !== 'string' || !base64Data || base64Data.length > 45000000 || !['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(mimeType) || !['en', 'la'].includes(language)) {
       return res.status(400).json({ error: 'base64Data is required' });
@@ -157,13 +462,11 @@ aiRouter.post('/grade-handwriting', async (req: Request, res: Response) => {
     }
 
     const settings = getSettings();
-    if (customApiKey !== undefined && typeof customApiKey !== 'string') return void res.status(400).json({ error: 'Invalid API key' });
-    const apiKey = process.env.GEMINI_API_KEY || customApiKey || settings.geminiApiKey;
+    const { config, validationError } = resolveAiConfig(req.body || {}, settings);
+    if (validationError) return void res.status(400).json({ error: validationError });
 
-    if (!apiKey) {
-      return res.status(400).json({
-        error: 'Kein Gemini API-Schlüssel konfiguriert. Bitte in den Einstellungen hinterlegen oder als GEMINI_API_KEY im Docker-Container angeben.',
-      });
+    if (!config) {
+      return res.status(400).json({ error: NOT_CONFIGURED_ERROR });
     }
 
     const targetLangName = language === 'en' ? 'Englisch' : 'Latein';
@@ -197,11 +500,27 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 }`;
 
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-    const models = ['gemini-3.5-flash-lite', 'gemini-4-hydrogen'];
+
+    if (config.provider === 'openai') {
+      const { text, model } = await callOpenAiCompatible({
+        endpointUrl: config.baseUrl,
+        apiKey: config.apiKey,
+        models: config.models,
+        prompt: systemPrompt,
+        mimeType,
+        cleanBase64,
+        temperature: 0.1,
+        maxTokens: 2048,
+        timeoutMs: 30000,
+      });
+      const parsed = extractJsonObject(text, 'KI-Antwort konnte nicht als JSON interpretiert werden.');
+      return void res.json({ ...validateGrade(parsed, expectedWord), model });
+    }
+
     let lastError: Error | null = null;
     let resultData: HandwritingGradeResponse | null = null;
 
-    for (const model of models) {
+    for (const model of GEMINI_MODELS) {
       try {
         const genConfig: Record<string, any> = {
           ...(model.startsWith('gemini-4') ? {} : { temperature: 0.1 }),
@@ -216,9 +535,9 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
           genConfig.thinkingConfig = { thinkingBudget: 0 };
         }
 
-        const sendRequest = async (config: Record<string, any>) => {
+        const sendRequest = async (configObj: Record<string, any>) => {
           return fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey}`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -238,7 +557,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
                     ],
                   },
                 ],
-                generationConfig: config,
+                generationConfig: configObj,
               }),
             }
           );
@@ -259,15 +578,7 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
           throw new Error('Keine Antwort von Gemini erhalten.');
         }
 
-        let parsed: any;
-        try {
-          const jsonMatch = textPart.match(/\{[\s\S]*\}/);
-          const jsonStr = jsonMatch ? jsonMatch[0] : textPart.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
-          parsed = JSON.parse(jsonStr);
-        } catch {
-          throw new Error('Gemini-Antwort konnte nicht als JSON interpretiert werden.');
-        }
-
+        const parsed = extractJsonObject(textPart, 'Gemini-Antwort konnte nicht als JSON interpretiert werden.');
         resultData = { ...validateGrade(parsed, expectedWord), model };
         break;
       } catch (err) {
@@ -285,4 +596,3 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
     res.status(500).json({ error: error.message || 'Handwriting grading failed' });
   }
 });
-

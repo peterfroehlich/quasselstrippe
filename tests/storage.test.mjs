@@ -148,9 +148,23 @@ test('offline shared vocabulary changes propagate to cached profiles without cop
 });
 test('offline settings survive reconnect and never include the personal key in queued payloads', async () => {
   offline = true;
-  await storage.saveSettings({ ...server.settings, speechRate: 0.6, geminiApiKey: 'local-only-key' });
-  assert.equal(journal().pending[0].kind, 'settings'); assert.ok(!JSON.stringify(journal()).includes('local-only-key'));
+  await storage.saveSettings({
+    ...server.settings,
+    speechRate: 0.6,
+    geminiApiKey: 'local-only-key',
+    aiBaseUrl: 'http://reclopsy.local:8080/v1',
+    aiModel: 'vision-model',
+    aiApiKey: 'local-bearer-token',
+  });
+  assert.equal(journal().pending[0].kind, 'settings');
+  assert.ok(!JSON.stringify(journal()).includes('local-only-key'));
+  assert.ok(!JSON.stringify(journal()).includes('reclopsy.local'));
+  assert.ok(!JSON.stringify(journal()).includes('local-bearer-token'));
   assert.equal((await storage.loadSettingsAsync()).speechRate, 0.6);
   offline = false; const settings = await storage.loadSettingsAsync(); assert.equal(settings.speechRate, 0.6);
   assert.equal(settings.geminiApiKey, 'local-only-key'); assert.equal(server.settings.geminiApiKey, '');
+  assert.equal(settings.aiBaseUrl, 'http://reclopsy.local:8080/v1');
+  assert.equal(settings.aiModel, 'vision-model');
+  assert.equal(settings.aiApiKey, 'local-bearer-token');
+  assert.equal(server.settings.aiBaseUrl, undefined);
 });

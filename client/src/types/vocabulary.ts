@@ -97,8 +97,18 @@ export type StudyMode = 'flashcards' | 'quiz' | 'writing' | 'spelling' | 'match'
 
 export type AppMode = 'learner' | 'admin';
 
+export interface AiClientConfig {
+  geminiApiKey?: string;
+  aiBaseUrl?: string;
+  aiModel?: string;
+  aiApiKey?: string;
+}
+
 export interface AppSettings {
   geminiApiKey: string;
+  aiBaseUrl?: string;
+  aiModel?: string;
+  aiApiKey?: string;
   aiAvailable?: boolean;
   activeLanguage: Language;
   speechRate: number; // 0.8 - 1.2

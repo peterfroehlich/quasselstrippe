@@ -114,6 +114,21 @@ test('settings expose AI capability without exposing or accepting browser secret
   assert.equal(response.status, 200); assert.equal(db.getSettings().geminiApiKey, 'private-server-key');
   assert.equal(db.getSettings().speechRate, 0.7);
   assert.equal((await call('/settings', { method: 'PUT', body: { speechRate: 9 } })).status, 400);
+
+  db.updateSettings({ geminiApiKey: '' });
+  const prevBaseUrl = process.env.AI_BASE_URL;
+  const prevAiKey = process.env.AI_API_KEY;
+  try {
+    process.env.AI_BASE_URL = 'http://reclopsy.internal:8080/v1';
+    process.env.AI_API_KEY = 'super-secret-token';
+    response = await call('/settings'); data = await response.json();
+    assert.equal(data.aiAvailable, true);
+    assert.ok(!JSON.stringify(data).includes('reclopsy.internal'));
+    assert.ok(!JSON.stringify(data).includes('super-secret-token'));
+  } finally {
+    if (prevBaseUrl === undefined) delete process.env.AI_BASE_URL; else process.env.AI_BASE_URL = prevBaseUrl;
+    if (prevAiKey === undefined) delete process.env.AI_API_KEY; else process.env.AI_API_KEY = prevAiKey;
+  }
 });
 test('due dates, assisted practice, repeated answers and errors follow the scheduling rules', () => {
   const now = Date.now(); let w = word('learning');

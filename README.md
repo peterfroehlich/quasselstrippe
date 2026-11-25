@@ -190,9 +190,14 @@ einem signierten HttpOnly-Cookie; nach einem Serverneustart ist eine erneute Anm
 Für HTTPS kann `COOKIE_SECURE=true` gesetzt werden. Die App ist für eine gemeinsam
 verwaltete Familie oder Lerngruppe gedacht; Profile sind keine getrennten Benutzerkonten.
 
-Ein persönlicher Gemini-Schlüssel bleibt im Browser und wird nur mit KI-Anfragen
-übertragen. Alternativ wird `GEMINI_API_KEY` ausschließlich auf dem Server gesetzt.
-Die Einstellungs-API gibt keine Schlüssel zurück.
+Ein persönlicher Modell-Endpunkt oder Gemini-Schlüssel bleibt im Browser und wird nur mit KI-Anfragen
+übertragen. Alternativ kann auf dem Server ein generischer OpenAI-kompatibler Modell-Endpunkt
+(z.B. Reclopsy unter `http://reclopsy.reclopsy.svc.cluster.local:11435/v1`) über `AI_BASE_URL`,
+optional `AI_MODEL` (virtueller Modellname oder kommagetrennte Fallback-Liste) und optional
+`AI_API_KEY` (Bearer Token) oder `GEMINI_API_KEY` konfiguriert werden. Für Arbeitsblatt-Scanner und
+Handschrift-Korrektur muss das gewählte Zielmodell Bilder (`image_url`) unterstützen (bei Reclopsy
+z.B. ein OpenRouter- oder lokales Vision-Backend wie Ollama/vLLM; Reclopsys Gemini-Subscription-Ziel
+unterstützt derzeit nur Text). Die Einstellungs-API gibt keine Schlüssel oder Endpunkte zurück.
 
 Bereits geladene Vokabeln und Profile werden in IndexedDB gespeichert. Änderungen
 werden als geordnete Operationen dauerhaft zwischengespeichert und bei Verbindung
@@ -233,7 +238,10 @@ Browserprüfungen: zuerst `npx playwright install chromium`, dann nach dem Build
 | `POST` | `/api/words/reset-defaults` | Auf Standard-Vokabeln zurücksetzen |
 | `GET` | `/api/settings` | Einstellungen abrufen |
 | `PUT` | `/api/settings` | Einstellungen speichern |
-| `POST` | `/api/ai/analyze-worksheet` | Schul-Arbeitsblatt per Gemini Vision analysieren |
+| `POST` | `/api/ai/analyze-worksheet` | Schul-Arbeitsblatt per KI (OpenAI-kompatibel oder Gemini) analysieren |
+| `POST` | `/api/ai/grade-handwriting` | Handschrift per KI bewerten |
+| `POST` | `/api/ai/models` | Verfügbare Modelle eines OpenAI-kompatiblen Endpunkts abrufen |
+| `POST` | `/api/ai/test` | Konfigurierte KI-Verbindung prüfen |
 
 ---
 

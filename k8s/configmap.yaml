@@ -12,3 +12,6 @@ data:
   PORT: "3001"
   DATABASE_PATH: "/data/quasselstrippe.db"
   BACKEND_URL: "http://quasselstrippe-backend:3001"
+  # Optional: Generic OpenAI-compatible model endpoint (e.g. Reclopsy on port 11435)
+  # AI_BASE_URL: "http://reclopsy.reclopsy.svc.cluster.local:11435/v1"
+  # AI_MODEL: "vision-llm"

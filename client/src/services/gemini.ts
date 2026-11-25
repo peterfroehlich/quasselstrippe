@@ -1,6 +1,6 @@
 import { validateWorksheet, validateGrade } from './validation';
-import type { Language, WorksheetAnalysisResponse, ExtractedWordCandidate, HandwritingGradeResponse } from '../types/vocabulary';
-import { ApiError, apiAnalyzeWorksheet, apiGradeHandwriting } from './api';
+import type { Language, WorksheetAnalysisResponse, ExtractedWordCandidate, HandwritingGradeResponse, AiClientConfig } from '../types/vocabulary';
+import { ApiError, apiAnalyzeWorksheet, apiGradeHandwriting, apiTestAiConnection, apiListAiModels } from './api';
 
 export interface SampleWorksheet {
   id: string;
@@ -179,13 +179,212 @@ export const SAMPLE_WORKSHEETS: SampleWorksheet[] = [
   }
 ];
 
+function resolveChatCompletionsUrl(rawBaseUrl: string): string {
+  const trimmed = rawBaseUrl.trim().replace(/\/+$/, '');
+  const parsed = new URL(trimmed);
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Modell-Endpunkt muss http:// oder https:// verwenden.');
+  }
+  const pathname = parsed.pathname.replace(/\/+$/, '');
+  if (pathname.endsWith('/chat/completions')) {
+    return `${parsed.origin}${pathname}`;
+  }
+  if (!pathname) {
+    return `${parsed.origin}/v1/chat/completions`;
+  }
+  return `${parsed.origin}${pathname}/chat/completions`;
+}
+
+function parseModelList(raw?: string): string[] {
+  if (!raw) return ['default'];
+  const models = raw.split(',').map((m) => m.trim()).filter(Boolean);
+  return models.length > 0 ? models : ['default'];
+}
+
+function extractOpenAiContent(data: any): string | undefined {
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content === 'string' && content.trim()) return content;
+  if (Array.isArray(content)) {
+    const joined = content
+      .filter((part: any) => part && typeof part.text === 'string')
+      .map((part: any) => part.text)
+      .join('\n')
+      .trim();
+    if (joined) return joined;
+  }
+  return undefined;
+}
+
+async function callOpenAiCompatibleDirect(params: {
+  baseUrl: string;
+  apiKey?: string;
+  modelList?: string;
+  prompt: string;
+  mimeType?: string;
+  cleanBase64?: string;
+  temperature: number;
+  maxTokens?: number;
+  timeoutMs: number;
+  expectJson?: boolean;
+}): Promise<{ text: string; model: string }> {
+  const endpointUrl = resolveChatCompletionsUrl(params.baseUrl);
+  const models = parseModelList(params.modelList);
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (params.apiKey?.trim()) {
+    headers.Authorization = `Bearer ${params.apiKey.trim()}`;
+  }
+  const content: any =
+    params.cleanBase64 && params.mimeType
+      ? [
+          { type: 'text', text: params.prompt },
+          { type: 'image_url', image_url: { url: `data:${params.mimeType};base64,${params.cleanBase64}` } },
+        ]
+      : params.prompt;
+
+  let lastError: Error | null = null;
+  for (const model of models) {
+    try {
+      const sendRequest = async (includeResponseFormat: boolean) => {
+        const payload: Record<string, any> = {
+          model,
+          messages: [{ role: 'user', content }],
+          temperature: params.temperature,
+        };
+        if (params.maxTokens !== undefined) payload.max_tokens = params.maxTokens;
+        if (includeResponseFormat && params.expectJson !== false) {
+          payload.response_format = { type: 'json_object' };
+        }
+        return fetch(endpointUrl, {
+          method: 'POST',
+          headers,
+          signal: AbortSignal.timeout(params.timeoutMs),
+          body: JSON.stringify(payload),
+        });
+      };
+
+      let response = await sendRequest(true);
+      if (response.status === 400 && params.expectJson !== false) {
+        response = await sendRequest(false);
+      }
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => null);
+        const errMsg = errJson?.error?.message || errJson?.message || `HTTP ${response.status}`;
+        throw new Error(`Modell-Endpunkt (${model}): ${errMsg}`);
+      }
+      const data = await response.json();
+      const text = extractOpenAiContent(data);
+      if (!text) throw new Error('Keine Antwort vom Modell-Endpunkt erhalten.');
+      const resolvedModel = typeof data.model === 'string' && data.model.trim() ? data.model.trim() : model;
+      return { text, model: resolvedModel };
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+  throw lastError || new Error('Anfrage an den Modell-Endpunkt fehlgeschlagen.');
+}
+
+export async function listAiModels(config: Pick<AiClientConfig, 'aiBaseUrl' | 'aiApiKey'>): Promise<string[]> {
+  try {
+    const res = await apiListAiModels({
+      aiBaseUrl: config.aiBaseUrl?.trim() || undefined,
+      aiApiKey: config.aiApiKey?.trim() || undefined,
+    });
+    return Array.isArray(res.models) ? res.models : [];
+  } catch (serverErr) {
+    if (serverErr instanceof ApiError && !serverErr.retryable) throw serverErr;
+  }
+
+  if (!config.aiBaseUrl?.trim()) {
+    throw new Error('Bitte gib zuerst eine Modell-Endpunkt-URL ein.');
+  }
+  const modelsUrl = resolveChatCompletionsUrl(config.aiBaseUrl.trim()).replace(/\/chat\/completions$/, '/models');
+  const headers: Record<string, string> = {};
+  if (config.aiApiKey?.trim()) headers.Authorization = `Bearer ${config.aiApiKey.trim()}`;
+  const response = await fetch(modelsUrl, { method: 'GET', headers, signal: AbortSignal.timeout(10000) });
+  if (!response.ok) {
+    const errJson = await response.json().catch(() => null);
+    throw new Error(errJson?.error?.message || `HTTP ${response.status}`);
+  }
+  const data = await response.json();
+  const rawList = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
+  return rawList
+    .map((item: any) => (typeof item === 'string' ? item : typeof item?.id === 'string' ? item.id : typeof item?.name === 'string' ? item.name : ''))
+    .map((id: string) => id.trim())
+    .filter(Boolean);
+}
+
+export async function testAiConnection(
+  config: AiClientConfig
+): Promise<{ ok: boolean; provider: 'openai' | 'gemini'; model: string }> {
+  try {
+    return await apiTestAiConnection({
+      apiKey: config.geminiApiKey?.trim() || undefined,
+      aiBaseUrl: config.aiBaseUrl?.trim() || undefined,
+      aiModel: config.aiModel?.trim() || undefined,
+      aiApiKey: config.aiApiKey?.trim() || undefined,
+    });
+  } catch (serverErr) {
+    if (serverErr instanceof ApiError && !serverErr.retryable) throw serverErr;
+    // Fallback to direct browser test if server is unreachable
+  }
+
+  if (config.aiBaseUrl?.trim()) {
+    const { model } = await callOpenAiCompatibleDirect({
+      baseUrl: config.aiBaseUrl.trim(),
+      apiKey: config.aiApiKey,
+      modelList: config.aiModel,
+      prompt: 'Antworte nur mit: OK',
+      temperature: 0,
+      maxTokens: 16,
+      timeoutMs: 10000,
+      expectJson: false,
+    });
+    return { ok: true, provider: 'openai', model };
+  }
+
+  const apiKey = config.geminiApiKey?.trim();
+  if (!apiKey) {
+    throw new Error('Bitte gib zuerst einen Modell-Endpunkt oder einen Gemini API-Key ein.');
+  }
+
+  const modelsToTry = ['gemini-3.5-flash-lite', 'gemini-4-hydrogen'];
+  let lastErrorMsg = '';
+  for (const model of modelsToTry) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(5000),
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'Antworte nur mit: OK' }] }],
+            generationConfig: { thinkingConfig: { thinkingLevel: 'low' } },
+          }),
+        }
+      );
+      if (response.ok) return { ok: true, provider: 'gemini', model };
+      const errJson = await response.json().catch(() => null);
+      lastErrorMsg = errJson?.error?.message || `HTTP ${response.status}`;
+    } catch (err: unknown) {
+      lastErrorMsg = err instanceof Error ? err.message : 'Netzwerkfehler';
+    }
+  }
+  throw new Error(`API-Fehler: ${lastErrorMsg || 'Verbindung fehlgeschlagen'}`);
+}
+
 export async function analyzeWorksheetWithGemini(
   base64Data: string,
   mimeType: string,
   language: Language,
   suggestedLesson: string,
-  apiKey: string
+  apiKey: string,
+  aiConfig?: AiClientConfig
 ): Promise<WorksheetAnalysisResponse> {
+  const aiBaseUrl = aiConfig?.aiBaseUrl?.trim() || undefined;
+  const aiModel = aiConfig?.aiModel?.trim() || undefined;
+  const aiApiKey = aiConfig?.aiApiKey?.trim() || undefined;
+
   // 1. Try server-side analysis first
   try {
     const serverResult = await apiAnalyzeWorksheet({
@@ -194,18 +393,21 @@ export async function analyzeWorksheetWithGemini(
       language,
       suggestedLesson,
       apiKey,
+      aiBaseUrl,
+      aiModel,
+      aiApiKey,
     });
     if (serverResult && Array.isArray(serverResult.words)) {
       return validateWorksheet(serverResult, language, suggestedLesson);
     }
   } catch (serverErr) {
     if (serverErr instanceof ApiError && !serverErr.retryable) throw serverErr;
-    console.warn('[Gemini] Server analysis unavailable or failed, falling back to direct client call', serverErr);
+    console.warn('[AI] Server analysis unavailable or failed, falling back to direct client call', serverErr);
   }
 
   // 2. Direct client fallback
-  if (!apiKey) {
-    throw new Error('Kein API-Schlüssel für die Analyse angegeben.');
+  if (!aiBaseUrl && !apiKey) {
+    throw new Error('Kein Modell-Endpunkt oder API-Schlüssel für die Analyse angegeben.');
   }
 
   const targetLangName = language === 'en' ? 'Englisch' : 'Latein';
@@ -242,6 +444,30 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 }`;
 
   const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+
+  if (aiBaseUrl) {
+    const { text } = await callOpenAiCompatibleDirect({
+      baseUrl: aiBaseUrl,
+      apiKey: aiApiKey,
+      modelList: aiModel,
+      prompt: systemPrompt,
+      mimeType,
+      cleanBase64,
+      temperature: 0.2,
+      timeoutMs: 30000,
+    });
+    let parsed: any;
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+      parsed = JSON.parse(jsonStr);
+    } catch (jsonErr) {
+      console.error('Failed to parse AI JSON output', text, jsonErr);
+      throw new Error('KI-Antwort konnte nicht als Vokabelliste interpretiert werden.');
+    }
+    return validateWorksheet(parsed, language, suggestedLesson);
+  }
+
   const models = ['gemini-3.5-flash-lite', 'gemini-4-hydrogen'];
   let lastError: Error | null = null;
 
@@ -318,8 +544,14 @@ export async function gradeHandwriting(params: {
   language: Language;
   mimeType?: string;
   apiKey?: string;
+  aiBaseUrl?: string;
+  aiModel?: string;
+  aiApiKey?: string;
 }): Promise<HandwritingGradeResponse> {
   const { base64Data, expectedWord, language, mimeType = 'image/jpeg', apiKey } = params;
+  const aiBaseUrl = params.aiBaseUrl?.trim() || undefined;
+  const aiModel = params.aiModel?.trim() || undefined;
+  const aiApiKey = params.aiApiKey?.trim() || undefined;
 
   // 1. Try server proxy first
   try {
@@ -329,16 +561,19 @@ export async function gradeHandwriting(params: {
       expectedWord,
       language,
       apiKey,
+      aiBaseUrl,
+      aiModel,
+      aiApiKey,
     });
     return validateGrade(serverResult, expectedWord);
   } catch (serverErr) {
     if (serverErr instanceof ApiError && !serverErr.retryable) throw serverErr;
-    console.warn('[Gemini] Server handwriting grading unavailable or failed, falling back to direct client call', serverErr);
+    console.warn('[AI] Server handwriting grading unavailable or failed, falling back to direct client call', serverErr);
   }
 
   // 2. Direct client fallback
-  if (!apiKey) {
-    throw new Error('Kein API-Schlüssel für die Korrektur konfiguriert.');
+  if (!aiBaseUrl && !apiKey) {
+    throw new Error('Kein Modell-Endpunkt oder API-Schlüssel für die Korrektur konfiguriert.');
   }
 
   const targetLangName = language === 'en' ? 'Englisch' : 'Latein';
@@ -371,6 +606,31 @@ Antworte AUSSCHLIESSLICH im folgenden JSON-Format ohne Markdown-Codeblöcke auß
 }`;
 
   const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+
+  if (aiBaseUrl) {
+    const { text, model } = await callOpenAiCompatibleDirect({
+      baseUrl: aiBaseUrl,
+      apiKey: aiApiKey,
+      modelList: aiModel,
+      prompt: systemPrompt,
+      mimeType,
+      cleanBase64,
+      temperature: 0.1,
+      maxTokens: 2048,
+      timeoutMs: 15000,
+    });
+    let parsed: any;
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : text.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim();
+      parsed = JSON.parse(jsonStr);
+    } catch (jsonErr) {
+      console.error('Failed to parse AI JSON output', text, jsonErr);
+      throw new Error('KI-Antwort konnte nicht ausgewertet werden.');
+    }
+    return { ...validateGrade(parsed, expectedWord), model };
+  }
+
   const models = ['gemini-3.5-flash-lite', 'gemini-4-hydrogen'];
   let lastError: Error | null = null;
 

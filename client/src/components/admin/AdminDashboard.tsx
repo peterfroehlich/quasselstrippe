@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Camera, List, Users } from 'lucide-react';
-import type { WordItem, Language, UserProfile } from '../../types/vocabulary';
+import type { WordItem, Language, UserProfile, AiClientConfig } from '../../types/vocabulary';
 import { WorksheetScanner } from './WorksheetScanner';
 import { WordManager } from './WordManager';
 import { ProfileManager } from './ProfileManager';
@@ -9,6 +9,7 @@ interface AdminDashboardProps {
   words: WordItem[];
   language: Language;
   geminiApiKey: string;
+  aiConfig?: AiClientConfig;
   aiAvailable?: boolean;
   profiles: UserProfile[];
   activeProfile: UserProfile | null;
@@ -31,6 +32,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   words,
   language,
   geminiApiKey,
+  aiConfig,
   aiAvailable,
   profiles,
   activeProfile,
@@ -110,6 +112,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <WorksheetScanner
           language={language}
           geminiApiKey={geminiApiKey}
+          aiConfig={aiConfig}
           aiAvailable={aiAvailable}
           onAddWords={async (newWords) => {
             await onAddWords(newWords);

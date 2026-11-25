@@ -10,7 +10,7 @@ import {
   Shuffle, 
   Flame 
 } from 'lucide-react';
-import type { WordItem, Language, StudyMode } from '../../types/vocabulary';
+import type { WordItem, Language, StudyMode, AiClientConfig } from '../../types/vocabulary';
 import { FlashcardView } from './FlashcardView';
 import { QuizView } from './QuizView';
 import { SpellingView } from './SpellingView';
@@ -23,6 +23,7 @@ interface LearnerDashboardProps {
   onRecordReview: (wordId: string, wasCorrect: boolean, promote?: boolean) => Promise<void>;
   autoPlayAudio: boolean;
   geminiApiKey?: string;
+  aiConfig?: AiClientConfig;
   aiAvailable?: boolean;
 }
 
@@ -32,6 +33,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
   onRecordReview,
   autoPlayAudio,
   geminiApiKey,
+  aiConfig,
 }) => {
   const [activeTab, setActiveTab] = useState<StudyMode>('flashcards');
   const [selectedLesson, setSelectedLesson] = useState<string>('all');
@@ -251,6 +253,7 @@ export const LearnerDashboard: React.FC<LearnerDashboardProps> = ({
               onRecordReview={onRecordReview}
               onRestart={handleShuffle}
               apiKey={geminiApiKey}
+              aiConfig={aiConfig}
               selectedLesson={selectedLesson}
               availableLessons={lessons}
               onSelectLesson={setSelectedLesson}

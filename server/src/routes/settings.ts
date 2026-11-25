@@ -3,7 +3,11 @@ import { getSettings, updateSettings } from '../db/database.js';
 export const settingsRouter = Router();
 const publicSettings = () => {
   const { geminiApiKey, ...settings } = getSettings();
-  return { ...settings, geminiApiKey: '', aiAvailable: Boolean(process.env.GEMINI_API_KEY || geminiApiKey) };
+  return {
+    ...settings,
+    geminiApiKey: '',
+    aiAvailable: Boolean(process.env.AI_BASE_URL?.trim() || process.env.GEMINI_API_KEY?.trim() || geminiApiKey),
+  };
 };
 settingsRouter.get('/', (_req, res) => res.json(publicSettings()));
 settingsRouter.put('/', (req, res) => {

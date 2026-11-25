@@ -17,7 +17,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import type { WordItem, Language, HandwritingGradeResponse } from '../../types/vocabulary';
+import type { WordItem, Language, HandwritingGradeResponse, AiClientConfig } from '../../types/vocabulary';
 import { speechService } from '../../services/speech';
 import { guardHandwritingInput } from '../../services/handwritingInput';
 import { recordCorrection, recordPenRecovery, recordHandwritingInput } from '../../telemetry';
@@ -32,6 +32,7 @@ interface WritingViewProps {
   onRecordReview: (wordId: string, wasCorrect: boolean, promote?: boolean) => Promise<void>;
   onRestart: () => void;
   apiKey?: string;
+  aiConfig?: AiClientConfig;
   selectedLesson?: string;
   availableLessons?: string[];
   onSelectLesson?: (lesson: string) => void;
@@ -44,6 +45,7 @@ export const WritingView: React.FC<WritingViewProps> = ({
   onRecordReview,
   onRestart,
   apiKey,
+  aiConfig,
   selectedLesson = 'all',
   availableLessons = [],
   onSelectLesson,
@@ -677,6 +679,9 @@ export const WritingView: React.FC<WritingViewProps> = ({
         expectedWord: currentWord.word,
         language,
         apiKey,
+        aiBaseUrl: aiConfig?.aiBaseUrl,
+        aiModel: aiConfig?.aiModel,
+        aiApiKey: aiConfig?.aiApiKey,
       });
 
       correctionFinished = true;

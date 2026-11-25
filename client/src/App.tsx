@@ -206,7 +206,7 @@ const AuthenticatedApp: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
         onLanguageChange={handleLanguageChange}
         onOpenSettings={() => setIsSettingsOpen(true)}
         words={words}
-        hasApiKey={Boolean(settings.geminiApiKey || settings.aiAvailable)}
+        hasApiKey={Boolean(settings.aiBaseUrl || settings.geminiApiKey || settings.aiAvailable)}
         profiles={profiles}
         activeProfile={activeProfile}
         onSelectProfile={handleSelectProfile}
@@ -228,6 +228,12 @@ const AuthenticatedApp: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
             onRecordReview={handleRecordReview}
             autoPlayAudio={settings.autoPlayAudio}
             geminiApiKey={settings.geminiApiKey}
+            aiConfig={{
+              geminiApiKey: settings.geminiApiKey,
+              aiBaseUrl: settings.aiBaseUrl,
+              aiModel: settings.aiModel,
+              aiApiKey: settings.aiApiKey,
+            }}
             aiAvailable={settings.aiAvailable}
           />
         ) : (
@@ -236,6 +242,12 @@ const AuthenticatedApp: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
             words={words}
             language={activeLanguage}
             geminiApiKey={settings.geminiApiKey}
+            aiConfig={{
+              geminiApiKey: settings.geminiApiKey,
+              aiBaseUrl: settings.aiBaseUrl,
+              aiModel: settings.aiModel,
+              aiApiKey: settings.aiApiKey,
+            }}
             aiAvailable={settings.aiAvailable}
             profiles={profiles}
             activeProfile={activeProfile}

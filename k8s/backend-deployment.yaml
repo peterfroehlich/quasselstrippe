@@ -45,6 +45,12 @@ spec:
                 secretKeyRef:
                   name: quasselstrippe-secret
                   key: APP_PASSWORD
+            - name: AI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: quasselstrippe-secret
+                  key: AI_API_KEY
+                  optional: true
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:

@@ -243,12 +243,43 @@ export async function apiSaveSettings(settings: Partial<AppSettings>): Promise<A
   return res.json();
 }
 
+export async function apiListAiModels(params: {
+  aiBaseUrl?: string;
+  aiApiKey?: string;
+}): Promise<{ models: string[] }> {
+  const res = await request(`${API_BASE}/ai/models`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+    signal: AbortSignal.timeout(12000),
+  });
+  return res.json();
+}
+
+export async function apiTestAiConnection(params: {
+  apiKey?: string;
+  aiBaseUrl?: string;
+  aiModel?: string;
+  aiApiKey?: string;
+}): Promise<{ ok: boolean; provider: 'openai' | 'gemini'; model: string }> {
+  const res = await request(`${API_BASE}/ai/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+    signal: AbortSignal.timeout(15000),
+  });
+  return res.json();
+}
+
 export async function apiAnalyzeWorksheet(params: {
   base64Data: string;
   mimeType: string;
   language: Language;
   suggestedLesson: string;
   apiKey?: string;
+  aiBaseUrl?: string;
+  aiModel?: string;
+  aiApiKey?: string;
 }): Promise<WorksheetAnalysisResponse> {
   const res = await request(`${API_BASE}/ai/analyze-worksheet`, {
     method: 'POST',
@@ -269,6 +300,9 @@ export async function apiGradeHandwriting(params: {
   expectedWord: string;
   language: Language;
   apiKey?: string;
+  aiBaseUrl?: string;
+  aiModel?: string;
+  aiApiKey?: string;
 }): Promise<HandwritingGradeResponse> {
   const res = await request(`${API_BASE}/ai/grade-handwriting`, {
     method: 'POST',

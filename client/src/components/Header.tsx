@@ -76,7 +76,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </span>
               </div>
               <p className="header-brand-subtitle" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Intelligenter Schul-Vokabeltrainer mit Gemini KI
+                Intelligenter Schul-Vokabeltrainer mit KI
               </p>
             </div>
           </div>
@@ -327,7 +327,7 @@ export const Header: React.FC<HeaderProps> = ({
                 borderRadius: 'var(--radius-md)',
                 position: 'relative',
               }}
-              title="Einstellungen & Gemini API"
+              title="Einstellungen & KI-Verbindung"
               aria-label="Einstellungen"
             >
               <Settings size={17} />
@@ -343,7 +343,7 @@ export const Header: React.FC<HeaderProps> = ({
                     background: 'var(--warning)',
                     border: '2px solid var(--bg-primary)',
                   }}
-                  title="Kein Gemini API-Key hinterlegt (Demo-Modus aktiv)"
+                  title="Kein KI-Endpunkt oder API-Key hinterlegt (Demo-Modus aktiv)"
                 />
               )}
             </button>
